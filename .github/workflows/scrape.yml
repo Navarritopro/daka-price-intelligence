@@ -1,1 +1,65 @@
+name: Scraping diario Daka
 
+on:
+  schedule:
+    # 12:00 UTC equivale a 8:00 AM en Venezuela
+    - cron: "0 12 * * *"
+
+  workflow_dispatch:
+    inputs:
+      trigger_type:
+        description: Origen de la ejecución
+        required: false
+        default: manual
+        type: choice
+        options:
+          - manual
+          - local
+
+concurrency:
+  group: daka-price-scraper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ALERT_THRESHOLD_PERCENT: ${{ vars.ALERT_THRESHOLD_PERCENT || '5' }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '465' }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM }}
+      ALERT_EMAIL_TO: ${{ vars.ALERT_EMAIL_TO }}
+      TRIGGER_TYPE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.trigger_type || 'manual' }}
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+
+      - name: Instalar dependencias
+        run: pip install -r scraper/requirements.txt
+
+      - name: Instalar Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Ejecutar pruebas del parser
+        run: python -m unittest discover -s scraper/tests -p "test_*.py"
+
+      - name: Ejecutar scraping
+        run: python scraper/scrape.py
