@@ -56,7 +56,7 @@ export async function GET() {
       lastScrapeAt: summary?.last_scrape_at ?? null,
       lastJobStatus: summary?.last_job_status ?? null,
       lastJobDurationSeconds: summary?.duration_seconds == null ? null : asNumber(summary.duration_seconds),
-      nextRun: "08:00 AM VET"
+      nextRun: "09:00 AM VET"
     });
   } catch (error) {
     console.error(error);

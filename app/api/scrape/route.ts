@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSql } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   const configuredKey = process.env.ADMIN_API_KEY;
@@ -7,33 +8,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Clave administrativa inválida" }, { status: 401 });
   }
 
-  const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
-  const token = process.env.GITHUB_TOKEN;
-  const workflow = process.env.GITHUB_WORKFLOW_FILE ?? "scrape.yml";
-  if (!owner || !repo || !token) {
-    return NextResponse.json({ error: "La integración con GitHub no está configurada" }, { status: 500 });
-  }
-
-  const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ ref: "main", inputs: { trigger_type: "manual" } }),
-      cache: "no-store"
+  try {
+    const sql = getSql();
+    const [pending] = await sql`
+      SELECT id
+      FROM scrape_requests
+      WHERE status IN ('queued', 'running')
+      ORDER BY requested_at DESC
+      LIMIT 1
+    `;
+    if (pending) {
+      return NextResponse.json(
+        { error: "Ya existe una solicitud pendiente o una ejecución manual activa" },
+        { status: 409 }
+      );
     }
-  );
-
-  if (!response.ok) {
-    const detail = await response.text();
-    console.error("GitHub dispatch failed", response.status, detail);
-    return NextResponse.json({ error: "GitHub no aceptó la ejecución" }, { status: 502 });
+    const [requestRow] = await sql`
+      INSERT INTO scrape_requests (status)
+      VALUES ('queued')
+      RETURNING id, requested_at
+    `;
+    return NextResponse.json({ accepted: true, request: requestRow }, { status: 202 });
+  } catch (error) {
+    console.error("Local scrape request failed", error);
+    return NextResponse.json({ error: "No fue posible registrar la solicitud local" }, { status: 500 });
   }
-  return NextResponse.json({ accepted: true }, { status: 202 });
 }

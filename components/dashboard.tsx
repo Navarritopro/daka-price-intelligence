@@ -118,7 +118,7 @@ export default function Dashboard() {
       const response = await fetch("/api/scrape", { method: "POST", headers: { "x-admin-key": key } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No fue posible iniciar la ejecución");
-      setNotice("Ejecución aceptada. El monitoreo mostrará el avance cuando GitHub Actions la inicie.");
+      setNotice("Solicitud registrada. El equipo ejecutor local la iniciará en un máximo de dos minutos.");
       setTimeout(() => void load(), 6000);
     } catch (requestError) {
       setNotice(requestError instanceof Error ? requestError.message : "No fue posible iniciar la ejecución");
@@ -143,7 +143,7 @@ export default function Dashboard() {
           <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => setView("operations")}>Monitoreo técnico</button>
         </nav>
         <div className="header-actions">
-          <span className="next-run">Próxima ejecución · 08:00 AM VET</span>
+          <span className="next-run">Próxima ejecución · 09:00 AM VET</span>
           <button className="primary-button" onClick={triggerScrape} disabled={running}>{running ? "Iniciando…" : "Actualizar datos ahora"}</button>
         </div>
       </header>
