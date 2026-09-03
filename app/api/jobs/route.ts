@@ -10,7 +10,7 @@ export async function GET() {
       SELECT j.id, j.trigger_type, j.status, j.started_at, j.finished_at,
         j.products_found, j.products_saved, j.products_without_sku,
         j.pages_scanned, j.error_message, j.logs,
-        EXTRACT(EPOCH FROM (j.finished_at - j.started_at))::int AS duration_seconds
+        EXTRACT(EPOCH FROM (COALESCE(j.finished_at, NOW()) - j.started_at))::int AS duration_seconds
       FROM scraping_jobs j
       JOIN sources s ON s.id = j.source_id AND s.slug = 'daka'
       ORDER BY j.started_at DESC
