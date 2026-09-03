@@ -58,10 +58,10 @@ class DakaScraper:
               const price = wrapper.querySelector('[data-testid="price"]');
               const stockText = (wrapper.innerText || '').toLowerCase();
               return {
-                name: nameNode?.innerText?.trim() || null,
-                image: image?.currentSrc || image?.src || image?.getAttribute('srcset') || null,
+                name: nameNode?.textContent?.trim() || null,
+                image: image?.getAttribute('src') || image?.getAttribute('srcset') || image?.currentSrc || null,
                 link: link?.getAttribute('href') || null,
-                price: price?.innerText?.trim() || null,
+                price: price?.textContent?.trim() || null,
                 inStock: !stockText.includes('agotado') && !stockText.includes('sin stock')
               };
             }).filter(item => item.name && item.link)
@@ -71,15 +71,32 @@ class DakaScraper:
     def _load_page(self, page, url: str, attempts: int = 3) -> bool:
         for attempt in range(1, attempts + 1):
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=self.page_timeout_ms)
+                # Daka can leave deferred third-party scripts loading for a long time
+                # on datacenter IPs. Start inspecting as soon as the response arrives.
+                page.goto(url, wait_until="commit", timeout=self.page_timeout_ms)
                 page.wait_for_selector(
                     '[data-testid="products-list"] [data-testid="product-wrapper"]',
+                    state="attached",
                     timeout=self.page_timeout_ms,
                 )
                 page.wait_for_timeout(1_500)
                 return True
             except PlaywrightTimeoutError as exc:
-                self.log(f"Intento {attempt} fallido en {url}: {type(exc).__name__}", "warning")
+                try:
+                    diagnostic = page.evaluate(
+                        """() => ({
+                          title: document.title,
+                          readyState: document.readyState,
+                          wrappers: document.querySelectorAll('[data-testid="product-wrapper"]').length,
+                          bodyText: (document.body?.innerText || '').slice(0, 180)
+                        })"""
+                    )
+                except Exception:
+                    diagnostic = {"url": page.url}
+                self.log(
+                    f"Intento {attempt} fallido en {url}: {type(exc).__name__} · {diagnostic}",
+                    "warning",
+                )
                 if attempt < attempts:
                     time.sleep(attempt * 2)
         return False
@@ -189,7 +206,7 @@ def main() -> int:
             text_message, html_message = build_messages(alerts)
             try:
                 telegram_sent = send_telegram(text_message)
-            except Exception as exc:
+            except Exception as exc:  # alert failure must not invalidate captured prices
                 scraper.log(f"Error en Telegram: {exc}", "warning")
             try:
                 emailed = send_email(html_message, len(alerts))
