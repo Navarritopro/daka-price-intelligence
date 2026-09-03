@@ -2,9 +2,8 @@ name: Scraping diario Daka
 
 on:
   schedule:
-    # 12:00 UTC equivale a 8:00 AM en Venezuela
+    # Venezuela usa UTC-4 durante todo el año: 12:00 UTC = 08:00 VET.
     - cron: "0 12 * * *"
-
   workflow_dispatch:
     inputs:
       trigger_type:
@@ -26,8 +25,7 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 120
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       ALERT_THRESHOLD_PERCENT: ${{ vars.ALERT_THRESHOLD_PERCENT || '5' }}
@@ -40,7 +38,6 @@ jobs:
       ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM }}
       ALERT_EMAIL_TO: ${{ vars.ALERT_EMAIL_TO }}
       TRIGGER_TYPE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.trigger_type || 'manual' }}
-
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
