@@ -37,6 +37,7 @@ class DakaScraper:
         self.max_pages = int(os.getenv("SCRAPER_MAX_PAGES", "200"))
         self.empty_limit = int(os.getenv("SCRAPER_EMPTY_PAGE_LIMIT", "3"))
         self.delay = float(os.getenv("SCRAPER_DELAY_SECONDS", "0.8"))
+        self.page_timeout_ms = int(os.getenv("SCRAPER_PAGE_TIMEOUT_MS", "60000"))
         self.logs: list[dict] = []
         self.pages_scanned = 0
 
@@ -70,9 +71,12 @@ class DakaScraper:
     def _load_page(self, page, url: str, attempts: int = 3) -> bool:
         for attempt in range(1, attempts + 1):
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=45_000)
-                page.wait_for_selector('[data-testid="product-wrapper"]', timeout=15_000)
-                page.wait_for_timeout(800)
+                page.goto(url, wait_until="domcontentloaded", timeout=self.page_timeout_ms)
+                page.wait_for_selector(
+                    '[data-testid="products-list"] [data-testid="product-wrapper"]',
+                    timeout=self.page_timeout_ms,
+                )
+                page.wait_for_timeout(1_500)
                 return True
             except PlaywrightTimeoutError as exc:
                 self.log(f"Intento {attempt} fallido en {url}: {type(exc).__name__}", "warning")
@@ -94,6 +98,14 @@ class DakaScraper:
                 locale="es-VE",
                 timezone_id="America/Caracas",
             )
+
+            def block_heavy_resources(route) -> None:
+                if route.request.resource_type in {"image", "media", "font"}:
+                    route.abort()
+                else:
+                    route.continue_()
+
+            context.route("**/*", block_heavy_resources)
             page = context.new_page()
             for page_number in range(1, self.max_pages + 1):
                 url = BASE_URL if page_number == 1 else f"{BASE_URL}?page={page_number}"
@@ -145,6 +157,11 @@ class DakaScraper:
             context.close()
             browser.close()
         self.log(f"Extracción finalizada: {len(unique)} productos únicos", "ok")
+        if not unique:
+            raise RuntimeError(
+                "Tiendas Daka respondió, pero no se extrajo ningún producto; "
+                "revise tiempos de carga, disponibilidad o cambios del catálogo"
+            )
         return list(unique.values())
 
 
@@ -172,7 +189,7 @@ def main() -> int:
             text_message, html_message = build_messages(alerts)
             try:
                 telegram_sent = send_telegram(text_message)
-            except Exception as exc:  # alert failure must not invalidate captured prices
+            except Exception as exc:
                 scraper.log(f"Error en Telegram: {exc}", "warning")
             try:
                 emailed = send_email(html_message, len(alerts))
