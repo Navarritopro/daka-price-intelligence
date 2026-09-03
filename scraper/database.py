@@ -28,7 +28,25 @@ class Database:
             )
         return job_id
 
-    def save_products(self, job_id: str, products: Iterable) -> int:
+    def update_job_progress(self, job_id: str, *, products_found: int,
+                            pages_scanned: int, logs: list[dict],
+                            products_saved: int | None = None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE scraping_jobs SET
+                  products_found = %s,
+                  pages_scanned = %s,
+                  products_saved = COALESCE(%s, products_saved),
+                  logs = %s::jsonb
+                WHERE id = %s AND status = 'running'
+                """,
+                (products_found, pages_scanned, products_saved,
+                 json.dumps(logs, ensure_ascii=False), job_id),
+            )
+
+    def save_products(self, job_id: str, products: Iterable,
+                      progress_callback=None) -> int:
         saved = 0
         with self._connect() as conn:
             source_id = conn.execute("SELECT id FROM sources WHERE slug = 'daka'").fetchone()["id"]
@@ -65,6 +83,8 @@ class Database:
                     (row["id"], job_id, product.price_usd, product.scraped_at, product.in_stock),
                 )
                 saved += 1
+                if progress_callback and saved % 100 == 0:
+                    progress_callback(saved)
         return saved
 
     def create_alerts(self, job_id: str, threshold_percent: Decimal) -> list[dict]:

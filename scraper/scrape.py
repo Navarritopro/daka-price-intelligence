@@ -33,13 +33,14 @@ class Product:
 
 
 class DakaScraper:
-    def __init__(self):
+    def __init__(self, progress_callback=None):
         self.max_pages = int(os.getenv("SCRAPER_MAX_PAGES", "200"))
         self.empty_limit = int(os.getenv("SCRAPER_EMPTY_PAGE_LIMIT", "3"))
         self.delay = float(os.getenv("SCRAPER_DELAY_SECONDS", "0.8"))
         self.page_timeout_ms = int(os.getenv("SCRAPER_PAGE_TIMEOUT_MS", "60000"))
         self.logs: list[dict] = []
         self.pages_scanned = 0
+        self.progress_callback = progress_callback
 
     def log(self, message: str, level: str = "info") -> None:
         now = datetime.now(timezone.utc)
@@ -170,6 +171,8 @@ class DakaScraper:
                         in_stock=raw.get("inStock"),
                     )
                 self.log(f"Página {page_number}: {len(raw_products)} productos · {len(unique)} únicos", "ok")
+                if self.progress_callback and (page_number == 1 or page_number % 5 == 0):
+                    self.progress_callback(len(unique), self.pages_scanned, self.logs)
                 time.sleep(self.delay)
             context.close()
             browser.close()
@@ -192,13 +195,29 @@ def main() -> int:
         trigger_type = "local"
     threshold = Decimal(os.getenv("ALERT_THRESHOLD_PERCENT", "5"))
     database = Database(database_url)
-    scraper = DakaScraper()
     job_id = database.create_job(trigger_type)
+    scraper = DakaScraper(
+        progress_callback=lambda found, pages, logs: database.update_job_progress(
+            job_id, products_found=found, pages_scanned=pages, logs=logs
+        )
+    )
     products: list[Product] = []
     saved = 0
     try:
         products = scraper.run()
-        saved = database.save_products(job_id, products)
+        database.update_job_progress(
+            job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
+            logs=scraper.logs,
+        )
+        scraper.log("Guardando catálogo e histórico en Neon")
+        saved = database.save_products(
+            job_id,
+            products,
+            progress_callback=lambda saved_count: database.update_job_progress(
+                job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
+                products_saved=saved_count, logs=scraper.logs,
+            ),
+        )
         without_sku = sum(1 for product in products if not product.external_id)
         alerts = database.create_alerts(job_id, threshold)
         emailed = telegram_sent = False
