@@ -9,7 +9,8 @@ export async function GET(request: NextRequest) {
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
     const change = request.nextUrl.searchParams.get("change")?.trim() ?? "all";
-    const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 200);
+    const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
+    const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
     const searchLike = `%${search}%`;
 
     const rows = await sql`
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
         FROM ranked WHERE rn = 1
       )
       SELECT p.id, p.external_id, p.name, p.category, p.url,
+        COUNT(*) OVER()::int AS total_count,
         cp.price_usd, cp.previous_price, cp.change_pct, cp.scraped_at
       FROM products p
       JOIN sources s ON s.id = p.source_id AND s.slug = 'daka'
@@ -38,11 +40,12 @@ export async function GET(request: NextRequest) {
           OR (${change} = 'up' AND cp.change_pct > 0)
           OR (${change} = 'same' AND COALESCE(cp.change_pct, 0) = 0)
         )
-      ORDER BY ABS(COALESCE(cp.change_pct, 0)) DESC, p.name ASC
+      ORDER BY ABS(COALESCE(cp.change_pct, 0)) DESC, p.name ASC, p.id ASC
       LIMIT ${limit}
+      OFFSET ${offset}
     `;
 
-    return NextResponse.json(rows.map((row) => ({
+    const items = rows.map((row) => ({
       id: asNumber(row.id),
       externalId: row.external_id,
       name: row.name,
@@ -52,7 +55,16 @@ export async function GET(request: NextRequest) {
       previousPrice: row.previous_price == null ? null : asNumber(row.previous_price),
       changePct: row.change_pct == null ? null : asNumber(row.change_pct),
       scrapedAt: row.scraped_at ?? null
-    })));
+    }));
+    const total = rows.length ? asNumber(rows[0].total_count) : 0;
+
+    return NextResponse.json({
+      items,
+      total,
+      offset,
+      limit,
+      hasMore: offset + items.length < total
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "No fue posible cargar los productos" }, { status: 500 });
