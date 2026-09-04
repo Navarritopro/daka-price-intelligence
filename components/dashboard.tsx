@@ -5,6 +5,14 @@ import type { DashboardData, JobSummary, ProductSummary } from "@/lib/types";
 
 type PricePoint = { price: number; scrapedAt: string; changePct: number | null };
 type View = "prices" | "operations";
+type ScrapeRequest = {
+  id: string;
+  status: "queued" | "running" | "success" | "failed";
+  requestedAt: string;
+  claimedAt: string | null;
+  finishedAt: string | null;
+  errorMessage: string | null;
+};
 
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
@@ -55,6 +63,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
+  const [latestRequest, setLatestRequest] = useState<ScrapeRequest | null>(null);
   const [selected, setSelected] = useState<ProductSummary | null>(null);
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [search, setSearch] = useState("");
@@ -68,18 +77,20 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [summaryResponse, productResponse, jobsResponse] = await Promise.all([
+      const [summaryResponse, productResponse, jobsResponse, requestResponse] = await Promise.all([
         fetch("/api/dashboard", { cache: "no-store" }),
         fetch("/api/products?limit=100", { cache: "no-store" }),
-        fetch("/api/jobs", { cache: "no-store" })
+        fetch("/api/jobs", { cache: "no-store" }),
+        fetch("/api/requests", { cache: "no-store" })
       ]);
-      if (!summaryResponse.ok || !productResponse.ok || !jobsResponse.ok) throw new Error("API unavailable");
-      const [summaryData, productData, jobsData] = await Promise.all([
-        summaryResponse.json(), productResponse.json(), jobsResponse.json()
+      if (!summaryResponse.ok || !productResponse.ok || !jobsResponse.ok || !requestResponse.ok) throw new Error("API unavailable");
+      const [summaryData, productData, jobsData, requestData] = await Promise.all([
+        summaryResponse.json(), productResponse.json(), jobsResponse.json(), requestResponse.json()
       ]);
       setSummary(summaryData);
       setProducts(productData);
       setJobs(jobsData);
+      setLatestRequest(requestData);
       setSelected((current) => current ?? productData[0] ?? null);
     } catch {
       setError("No fue posible cargar la información. Verifica la conexión con PostgreSQL.");
@@ -91,19 +102,27 @@ export default function Dashboard() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
+    const hasActiveExecution = latestRequest?.status === "queued" || latestRequest?.status === "running" || jobs[0]?.status === "running";
+    if (!hasActiveExecution) return;
     const timer = window.setInterval(async () => {
       try {
-        const response = await fetch("/api/jobs", { cache: "no-store" });
-        if (!response.ok) return;
-        const updatedJobs: JobSummary[] = await response.json();
+        const [jobsResponse, requestResponse] = await Promise.all([
+          fetch("/api/jobs", { cache: "no-store" }),
+          fetch("/api/requests", { cache: "no-store" })
+        ]);
+        if (!jobsResponse.ok || !requestResponse.ok) return;
+        const [updatedJobs, updatedRequest]: [JobSummary[], ScrapeRequest | null] = await Promise.all([
+          jobsResponse.json(), requestResponse.json()
+        ]);
         setJobs(updatedJobs);
+        setLatestRequest(updatedRequest);
         if (jobs[0]?.status === "running" && updatedJobs[0]?.status !== "running") void load();
       } catch {
         // El siguiente ciclo reintenta automáticamente.
       }
     }, 10_000);
     return () => window.clearInterval(timer);
-  }, [jobs[0]?.status, load]);
+  }, [jobs[0]?.status, latestRequest?.status, load]);
 
   useEffect(() => {
     if (!selected) { setHistory([]); return; }
@@ -133,6 +152,15 @@ export default function Dashboard() {
       const response = await fetch("/api/scrape", { method: "POST", headers: { "x-admin-key": key } });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No fue posible iniciar la ejecución");
+      setLatestRequest({
+        id: String(payload.request.id),
+        status: "queued",
+        requestedAt: payload.request.requested_at,
+        claimedAt: null,
+        finishedAt: null,
+        errorMessage: null
+      });
+      setView("operations");
       setNotice("Solicitud registrada. El equipo ejecutor local la iniciará en un máximo de dos minutos.");
       setTimeout(() => void load(), 6000);
     } catch (requestError) {
@@ -144,6 +172,9 @@ export default function Dashboard() {
   }
 
   const latestJob = jobs[0] ?? null;
+  const requestWaiting = latestRequest?.status === "queued";
+  const requestPreparing = latestRequest?.status === "running" && latestJob?.status !== "running";
+  const executionBusy = running || requestWaiting || requestPreparing || latestJob?.status === "running";
   const previousSuccessfulJob = jobs.find((job, index) => index > 0 && job.status === "success" && job.pagesScanned > 0);
   const expectedPages = previousSuccessfulJob?.pagesScanned ?? 138;
   const expectedProducts = previousSuccessfulJob?.productsFound ?? summary?.productsMonitored ?? 2205;
@@ -167,7 +198,7 @@ export default function Dashboard() {
         </nav>
         <div className="header-actions">
           <span className="next-run">Próxima ejecución · 09:00 AM VET</span>
-          <button className="primary-button" onClick={triggerScrape} disabled={running}>{running ? "Iniciando…" : "Actualizar datos ahora"}</button>
+          <button className="primary-button" onClick={triggerScrape} disabled={executionBusy}>{running ? "Iniciando…" : executionBusy ? "Ejecución pendiente" : "Actualizar datos ahora"}</button>
         </div>
       </header>
 
@@ -204,10 +235,11 @@ export default function Dashboard() {
         </main>
       ) : (
         <main className="operations-shell">
-          <section className="operations-top"><div><div className={`service-status ${latestJob?.status === "failed" ? "failed" : ""}`}>{latestJob?.status === "running" ? "Scraping en ejecución" : latestJob?.status === "failed" ? "Última ejecución fallida" : "Servicio operativo"}</div><h1>Monitoreo técnico</h1><p>Seguimiento del proceso de extracción, persistencia y alertas.</p></div><button className="primary-button operations-run" onClick={triggerScrape} disabled={running}>▶ Iniciar ejecución manual</button></section>
+          <section className="operations-top"><div><div className={`service-status ${latestJob?.status === "failed" ? "failed" : ""}`}>{requestWaiting ? "Solicitud esperando al equipo local" : requestPreparing ? "Preparando el scraper" : latestJob?.status === "running" ? "Scraping en ejecución" : latestJob?.status === "failed" ? "Última ejecución fallida" : "Servicio operativo"}</div><h1>Monitoreo técnico</h1><p>Seguimiento del proceso de extracción, persistencia y alertas.</p></div><button className="primary-button operations-run" onClick={triggerScrape} disabled={executionBusy}>▶ {executionBusy ? "Ejecución pendiente" : "Iniciar ejecución manual"}</button></section>
+          {(requestWaiting || requestPreparing) && <section className="live-progress queue-progress"><div><strong>{requestWaiting ? "Solicitud enviada" : "Solicitud recibida"}</strong><span>{requestWaiting ? "Esperando al receptor local" : "Preparando navegador y conexión"}</span></div><progress/><small>{requestWaiting ? `Solicitud #${latestRequest?.id} registrada ${formatDate(latestRequest?.requestedAt)} · puede tardar hasta dos minutos en comenzar.` : "El equipo local tomó la solicitud. El progreso aparecerá en unos segundos."}</small></section>}
           {latestJob?.status === "running" && <section className="live-progress"><div><strong>Ejecución en curso</strong><span>{progressPercent}% estimado · actualización automática cada 10 segundos</span></div><progress value={progressPercent} max="100"/><small>{latestJob.productsSaved > 0 ? `Guardando histórico: ${integer.format(latestJob.productsSaved)} de ${integer.format(expectedProducts)} productos` : `Extrayendo catálogo: ${latestJob.pagesScanned} de aproximadamente ${expectedPages} páginas · ${integer.format(latestJob.productsFound)} productos encontrados`}</small></section>}
           <section className="operations-metrics"><article><span>Productos extraídos</span><strong>{latestJob?.productsFound ?? 0}</strong><em>{latestJob?.status === "success" ? "✓ Proceso completado" : latestJob?.status ?? "Sin ejecuciones"}</em></article><article><span>Guardados con SAP</span><strong>{latestJob?.productsSaved ?? 0}</strong><em>Histórico persistido</em></article><article><span>Sin código SAP</span><strong>{latestJob?.productsWithoutSku ?? 0}</strong><em className="warning">Requiere revisión</em></article><article><span>Páginas</span><strong>{latestJob?.pagesScanned ?? 0}</strong><em>Procesadas</em></article><article><span>Duración</span><strong>{formatDuration(latestJob?.durationSeconds)}</strong><em>{latestJob?.status === "running" ? "Tiempo transcurrido" : "Última ejecución"}</em></article></section>
-          <section className="operations-grid"><article className="operations-panel"><div className="operations-head"><h2>Estado de la última ejecución</h2><small>{latestJob ? `Job #${latestJob.id.slice(0, 13)}` : "Sin ejecuciones"}</small></div><div className="pipeline"><div className="step"><i>✓</i><div><span>Inicialización</span><small>Conexión, job y navegador</small></div></div><div className="step"><i>✓</i><div><span>Extracción del catálogo</span><small>{latestJob?.pagesScanned ?? 0} páginas procesadas</small></div></div><div className="step"><i>✓</i><div><span>Normalización y validación</span><small>Precios USD y códigos SAP</small></div></div><div className="step"><i>✓</i><div><span>Persistencia y alertas</span><small>{latestJob?.productsSaved ?? 0} productos guardados</small></div></div></div></article>
+          <section className="operations-grid"><article className="operations-panel"><div className="operations-head"><h2>Estado de la última ejecución</h2><small>{latestJob ? `Job #${latestJob.id.slice(0, 13)}` : "Sin ejecuciones"}</small></div><div className="pipeline"><div className={`step ${latestJob?.status === "running" && latestJob.pagesScanned === 0 ? "active" : ""}`}><i>{latestJob ? "✓" : "…"}</i><div><span>Inicialización</span><small>Conexión, job y navegador</small></div></div><div className={`step ${latestJob?.status === "running" && latestJob.productsSaved === 0 ? "active" : latestJob?.status !== "success" ? "pending" : ""}`}><i>{latestJob?.status === "success" || (latestJob?.productsSaved ?? 0) > 0 ? "✓" : "…"}</i><div><span>Extracción del catálogo</span><small>{latestJob?.pagesScanned ?? 0} páginas procesadas</small></div></div><div className={`step ${latestJob?.status === "running" && latestJob.productsFound > 0 && latestJob.productsSaved === 0 ? "active" : latestJob?.status !== "success" ? "pending" : ""}`}><i>{latestJob?.status === "success" || (latestJob?.productsSaved ?? 0) > 0 ? "✓" : "…"}</i><div><span>Normalización y validación</span><small>Precios USD y códigos SAP</small></div></div><div className={`step ${latestJob?.status === "running" && latestJob.productsSaved > 0 ? "active" : latestJob?.status !== "success" ? "pending" : ""}`}><i>{latestJob?.status === "success" ? "✓" : "…"}</i><div><span>Persistencia y alertas</span><small>{latestJob?.productsSaved ?? 0} productos guardados</small></div></div></div></article>
           <article className="operations-panel"><div className="operations-head"><h2>Registro de actividad</h2><small>Hora Venezuela</small></div><div className="terminal">{latestJob?.logs?.length ? latestJob.logs.map((log, index) => <div key={`${log.time}-${index}`}><span className={log.level}>{log.time}</span> {log.message}</div>) : <div><span className="info">[SISTEMA]</span> Esperando la primera ejecución…</div>}{latestJob?.errorMessage && <div><span className="error">[ERROR]</span> {latestJob.errorMessage}</div>}</div></article></section>
           <section className="operations-lower"><article className="operations-panel"><div className="operations-head"><h2>Historial de ejecuciones</h2><small>Últimos 20 procesos</small></div><div className="table-scroll"><table className="operations-table"><thead><tr><th>Job</th><th>Inicio exacto</th><th>Origen</th><th>Productos</th><th>Duración</th><th>Resultado</th></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td>{job.id.slice(0, 13)}</td><td>{formatDate(job.startedAt)}</td><td>{job.triggerType}</td><td>{job.productsSaved}</td><td>{formatDuration(job.durationSeconds)}</td><td><span className={`job-badge ${job.status}`}>{job.status.toUpperCase()}</span></td></tr>)}</tbody></table></div></article><article className="operations-panel"><div className="operations-head"><h2>Configuración activa</h2><small>Fase 1</small></div><div className="operations-config"><div><span>Fuente</span><b>Tiendas Daka</b></div><div><span>Frecuencia</span><b>Todos los días</b></div><div><span>Hora</span><b>09:00 AM VET</b></div><div><span>Alerta mínima</span><b>±5%</b></div><div><span>Canales</span><b>Correo · Telegram</b></div></div></article></section>
         </main>
