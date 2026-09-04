@@ -22,9 +22,7 @@ type ProductPage = {
 };
 
 const PRODUCT_BATCH_SIZE = 50;
-const PRODUCT_ROW_HEIGHT = 112;
-const PRODUCT_VIEWPORT_HEIGHT = 680;
-const PRODUCT_OVERSCAN = 5;
+const PRODUCT_LOAD_THRESHOLD = 420;
 
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
@@ -86,7 +84,6 @@ export default function Dashboard() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
-  const [productScrollTop, setProductScrollTop] = useState(0);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,7 +138,6 @@ export default function Dashboard() {
     setTotalProducts(0);
     setHasMoreProducts(false);
     setSelected(null);
-    setProductScrollTop(0);
     productListRef.current?.scrollTo({ top: 0 });
 
     fetch(`/api/products?${params.toString()}`, { cache: "no-store", signal: controller.signal })
@@ -230,18 +226,9 @@ export default function Dashboard() {
       .catch(() => setHistory([]));
   }, [selected]);
 
-  const virtualStart = Math.max(0, Math.floor(productScrollTop / PRODUCT_ROW_HEIGHT) - PRODUCT_OVERSCAN);
-  const virtualEnd = Math.min(
-    products.length,
-    Math.ceil((productScrollTop + PRODUCT_VIEWPORT_HEIGHT) / PRODUCT_ROW_HEIGHT) + PRODUCT_OVERSCAN
-  );
-  const visibleProducts = products.slice(virtualStart, virtualEnd);
-  const productListHeight = products.length * PRODUCT_ROW_HEIGHT + 52;
-
   function handleProductScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
-    setProductScrollTop(element.scrollTop);
-    if (element.scrollTop + element.clientHeight >= element.scrollHeight - PRODUCT_ROW_HEIGHT * 4) {
+    if (element.scrollTop + element.clientHeight >= element.scrollHeight - PRODUCT_LOAD_THRESHOLD) {
       void loadMoreProductResults();
     }
   }
@@ -328,13 +315,8 @@ export default function Dashboard() {
               {productsLoading && <div className="empty-state">Buscando productos en todo el catálogo…</div>}
               {!productsLoading && productLoadError && products.length === 0 && <div className="empty-state product-error">{productLoadError}</div>}
               {!productsLoading && !productLoadError && products.length === 0 && <div className="empty-state">No encontramos productos con ese nombre o código SAP.</div>}
-              {products.length > 0 && <div className="product-virtual-space" style={{ height: productListHeight }}>
-                {visibleProducts.map((product, visibleIndex) => {
-                  const absoluteIndex = virtualStart + visibleIndex;
-                  return <button key={product.id} aria-posinset={absoluteIndex + 1} aria-setsize={totalProducts} className={selected?.id === product.id ? "product-row virtual-product-row active" : "product-row virtual-product-row"} style={{ transform: `translateY(${absoluteIndex * PRODUCT_ROW_HEIGHT}px)` }} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.category ?? "Sin categoría"}</p></div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span></div></button>;
-                })}
-                <div className="product-load-state" style={{ transform: `translateY(${products.length * PRODUCT_ROW_HEIGHT}px)` }}>{loadingMoreProducts ? "Cargando más productos…" : hasMoreProducts ? "Desplázate para continuar cargando" : "Se mostraron todos los productos"}{productLoadError && products.length > 0 ? ` · ${productLoadError}` : ""}</div>
-              </div>}
+              {products.map((product, index) => <button key={product.id} aria-posinset={index + 1} aria-setsize={totalProducts} className={selected?.id === product.id ? "product-row active" : "product-row"} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.category ?? "Sin categoría"}</p></div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span></div></button>)}
+              {products.length > 0 && <div className="product-load-state">{loadingMoreProducts ? "Cargando más productos…" : hasMoreProducts ? "Desplázate para continuar cargando" : "Se mostraron todos los productos"}{productLoadError && products.length > 0 ? ` · ${productLoadError}` : ""}</div>}
             </div></article>
             <article className="detail-card">
               {selected ? <><div className="detail-main"><div className="detail-title"><div><h2>{selected.name}</h2><div className="meta"><span className="source-badge">D</span> Tiendas Daka · SAP {selected.externalId}</div></div><div className="current-price"><span className="meta">Precio actual</span><strong>{selected.currentPrice == null ? "Sin precio" : money.format(selected.currentPrice)}</strong><span className={`variation ${changeClass(selected.changePct)}`}>{selected.changePct == null ? "Sin comparación" : `${selected.changePct > 0 ? "+" : ""}${selected.changePct.toFixed(1)}% vs. captura anterior`}</span></div></div>
