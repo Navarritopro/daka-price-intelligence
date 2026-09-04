@@ -25,6 +25,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
       return {
         price,
         scrapedAt: row.scraped_at,
+        previousPrice: previous,
+        differenceUsd: previous == null ? null : price - previous,
         changePct: previous && previous !== 0 ? ((price - previous) / previous) * 100 : null
       };
     }));
