@@ -11,6 +11,32 @@ type PricePoint = {
   changePct: number | null;
 };
 type View = "prices" | "operations";
+type PriceTab = "explore" | "changes";
+type ChangeProduct = ProductSummary & {
+  changeCount: number;
+  initialPrice: number | null;
+  finalPrice: number | null;
+  netDifferenceUsd: number | null;
+  netChangePct: number | null;
+  largestChangePct: number | null;
+  latestChangeAt: string | null;
+};
+type ChangeStats = { productsChanged: number; totalChanges: number; drops: number; increases: number };
+type ChangePage = {
+  items: ChangeProduct[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  stats: ChangeStats;
+};
+type MovementPage = {
+  items: PricePoint[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+};
 type ScrapeRequest = {
   id: string;
   status: "queued" | "running" | "success" | "failed";
@@ -76,6 +102,7 @@ function chartPath(points: PricePoint[]) {
 
 export default function Dashboard() {
   const [view, setView] = useState<View>("prices");
+  const [priceTab, setPriceTab] = useState<PriceTab>("explore");
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
@@ -91,6 +118,22 @@ export default function Dashboard() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
+  const [changeProducts, setChangeProducts] = useState<ChangeProduct[]>([]);
+  const [changeStats, setChangeStats] = useState<ChangeStats>({ productsChanged: 0, totalChanges: 0, drops: 0, increases: 0 });
+  const [changeDays, setChangeDays] = useState("30");
+  const [changeMovement, setChangeMovement] = useState("all");
+  const [changeThreshold, setChangeThreshold] = useState("0");
+  const [changeStatus, setChangeStatus] = useState("current");
+  const [changeTotal, setChangeTotal] = useState(0);
+  const [hasMoreChanges, setHasMoreChanges] = useState(false);
+  const [changesLoading, setChangesLoading] = useState(false);
+  const [loadingMoreChanges, setLoadingMoreChanges] = useState(false);
+  const [changeLoadError, setChangeLoadError] = useState<string | null>(null);
+  const [movements, setMovements] = useState<PricePoint[]>([]);
+  const [movementTotal, setMovementTotal] = useState(0);
+  const [hasMoreMovements, setHasMoreMovements] = useState(false);
+  const [movementsLoading, setMovementsLoading] = useState(false);
+  const [loadingMoreMovements, setLoadingMoreMovements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +141,7 @@ export default function Dashboard() {
   const productListRef = useRef<HTMLDivElement>(null);
   const productQueryVersion = useRef(0);
   const loadingMoreRef = useRef(false);
+  const changeQueryVersion = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -130,6 +174,7 @@ export default function Dashboard() {
   }, [search]);
 
   useEffect(() => {
+    if (priceTab !== "explore") return;
     const controller = new AbortController();
     const version = ++productQueryVersion.current;
     const params = new URLSearchParams({
@@ -167,7 +212,7 @@ export default function Dashboard() {
       });
 
     return () => controller.abort();
-  }, [debouncedSearch, changeFilter, productStatus]);
+  }, [debouncedSearch, changeFilter, priceTab, productStatus]);
 
   const loadMoreProductResults = useCallback(async () => {
     if (loadingMoreRef.current || productsLoading || !hasMoreProducts) return;
@@ -205,6 +250,76 @@ export default function Dashboard() {
   }, [changeFilter, debouncedSearch, hasMoreProducts, productStatus, products.length, productsLoading]);
 
   useEffect(() => {
+    if (priceTab !== "changes") return;
+    const controller = new AbortController();
+    const version = ++changeQueryVersion.current;
+    const params = new URLSearchParams({
+      limit: String(PRODUCT_BATCH_SIZE),
+      offset: "0",
+      search: debouncedSearch,
+      days: changeDays,
+      movement: changeMovement,
+      threshold: changeThreshold,
+      status: changeStatus
+    });
+
+    setChangesLoading(true);
+    setChangeLoadError(null);
+    setChangeProducts([]);
+    setChangeTotal(0);
+    setHasMoreChanges(false);
+    fetch(`/api/price-changes?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Changes unavailable")))
+      .then((page: ChangePage) => {
+        if (version !== changeQueryVersion.current) return;
+        setChangeProducts(page.items);
+        setChangeTotal(page.total);
+        setHasMoreChanges(page.hasMore);
+        setChangeStats(page.stats);
+        setSelected(page.items[0] ?? null);
+      })
+      .catch((requestError) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        if (version !== changeQueryVersion.current) return;
+        setChangeLoadError("No fue posible consultar los cambios de precios.");
+      })
+      .finally(() => {
+        if (version === changeQueryVersion.current) setChangesLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [changeDays, changeMovement, changeStatus, changeThreshold, debouncedSearch, priceTab]);
+
+  const loadMoreChanges = useCallback(async () => {
+    if (loadingMoreChanges || changesLoading || !hasMoreChanges) return;
+    setLoadingMoreChanges(true);
+    const version = changeQueryVersion.current;
+    const params = new URLSearchParams({
+      limit: String(PRODUCT_BATCH_SIZE),
+      offset: String(changeProducts.length),
+      search: debouncedSearch,
+      days: changeDays,
+      movement: changeMovement,
+      threshold: changeThreshold,
+      status: changeStatus
+    });
+    try {
+      const response = await fetch(`/api/price-changes?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Changes unavailable");
+      const page: ChangePage = await response.json();
+      if (version !== changeQueryVersion.current) return;
+      setChangeProducts((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.id === item.id))]);
+      setChangeTotal(page.total);
+      setHasMoreChanges(page.hasMore);
+      setChangeStats(page.stats);
+    } catch {
+      if (version === changeQueryVersion.current) setChangeLoadError("No se pudo cargar el siguiente grupo de cambios.");
+    } finally {
+      if (version === changeQueryVersion.current) setLoadingMoreChanges(false);
+    }
+  }, [changeDays, changeMovement, changeProducts.length, changeStatus, changeThreshold, changesLoading, debouncedSearch, hasMoreChanges, loadingMoreChanges]);
+
+  useEffect(() => {
     const hasActiveExecution = latestRequest?.status === "queued" || latestRequest?.status === "running" || jobs[0]?.status === "running";
     if (!hasActiveExecution) return;
     const timer = window.setInterval(async () => {
@@ -234,6 +349,65 @@ export default function Dashboard() {
       .then(setHistory)
       .catch(() => setHistory([]));
   }, [selected]);
+
+  useEffect(() => {
+    if (priceTab !== "changes" || !selected) {
+      setMovements([]);
+      setMovementTotal(0);
+      setHasMoreMovements(false);
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      limit: String(PRODUCT_BATCH_SIZE),
+      offset: "0",
+      days: changeDays,
+      movement: changeMovement,
+      threshold: changeThreshold
+    });
+    setMovementsLoading(true);
+    setMovements([]);
+    fetch(`/api/products/${selected.id}/changes?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((page: MovementPage) => {
+        setMovements(page.items);
+        setMovementTotal(page.total);
+        setHasMoreMovements(page.hasMore);
+      })
+      .catch((requestError) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        setMovements([]);
+        setMovementTotal(0);
+        setHasMoreMovements(false);
+      })
+      .finally(() => setMovementsLoading(false));
+    return () => controller.abort();
+  }, [changeDays, changeMovement, changeThreshold, priceTab, selected]);
+
+  const loadMoreMovements = useCallback(async () => {
+    if (!selected || loadingMoreMovements || movementsLoading || !hasMoreMovements) return;
+    setLoadingMoreMovements(true);
+    const params = new URLSearchParams({
+      limit: String(PRODUCT_BATCH_SIZE),
+      offset: String(movements.length),
+      days: changeDays,
+      movement: changeMovement,
+      threshold: changeThreshold
+    });
+    try {
+      const response = await fetch(`/api/products/${selected.id}/changes?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Movements unavailable");
+      const page: MovementPage = await response.json();
+      setMovements((current) => [...current, ...page.items]);
+      setMovementTotal(page.total);
+      setHasMoreMovements(page.hasMore);
+    } catch {
+      setNotice("No fue posible cargar el siguiente grupo de movimientos.");
+      window.setTimeout(() => setNotice(null), 4500);
+    } finally {
+      setLoadingMoreMovements(false);
+    }
+  }, [changeDays, changeMovement, changeThreshold, hasMoreMovements, loadingMoreMovements, movements.length, movementsLoading, selected]);
 
   function handleProductScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
@@ -286,6 +460,7 @@ export default function Dashboard() {
   const prices = history.map((point) => point.price);
   const maxPrice = prices.length ? Math.max(...prices) : null;
   const minPrice = prices.length ? Math.min(...prices) : null;
+  const selectedChange = changeProducts.find((product) => product.id === selected?.id) ?? null;
 
   return (
     <div className="app-wrap">
@@ -316,7 +491,8 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs"><button className="tab active">Explorar precios</button><button className="tab">Cambios del día</button><button className="tab">Histórico</button><button className="tab locked" title="Disponible en Fase 2">🔒 Competidores</button></div>
+          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className="tab locked" title="Disponible en Fase 2">🔒 Competidores</button></div>
+          {priceTab === "explore" ? <>
           <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Estado del producto" value={productStatus} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>Últimos 90 días</option></select></section>
 
           <section className="content-grid">
@@ -334,6 +510,21 @@ export default function Dashboard() {
                 <div className="history-table"><div className="section-head"><h2>Últimas capturas</h2><small>Fecha y hora exactas · VET</small></div><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio USD</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{history.slice(0, 10).map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div></div></> : <div className="empty-state detail-empty">Selecciona un producto para consultar su histórico.</div>}
             </article>
           </section>
+          </> : <>
+            <section className="filters change-filters"><input aria-label="Buscar producto con cambios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Período de cambios" value={changeDays} onChange={(event) => setChangeDays(event.target.value)}><option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select aria-label="Tipo de movimiento" value={changeMovement} onChange={(event) => setChangeMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select aria-label="Magnitud mínima" value={changeThreshold} onChange={(event) => setChangeThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select aria-label="Estado del catálogo" value={changeStatus} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></section>
+            <section className="changes-summary"><article><span>Productos con cambios</span><strong>{changesLoading ? "…" : integer.format(changeStats.productsChanged)}</strong></article><article><span>Movimientos registrados</span><strong>{changesLoading ? "…" : integer.format(changeStats.totalChanges)}</strong></article><article className="drop"><span>Rebajas</span><strong>{changesLoading ? "…" : integer.format(changeStats.drops)}</strong></article><article className="rise"><span>Aumentos</span><strong>{changesLoading ? "…" : integer.format(changeStats.increases)}</strong></article></section>
+            <section className="changes-grid">
+              <article className="changes-table-card"><div className="section-head"><h2>Cambios encontrados</h2><small>{changesLoading ? "Consultando histórico…" : `Mostrando ${integer.format(changeProducts.length)} de ${integer.format(changeTotal)} productos`}</small></div>
+                {changesLoading ? <div className="empty-state">Analizando las capturas del período…</div> : changeLoadError && changeProducts.length === 0 ? <div className="empty-state product-error">{changeLoadError}</div> : changeProducts.length === 0 ? <div className="empty-state">No se encontraron cambios con estos filtros.</div> : <div className="table-scroll"><table className="changes-table"><thead><tr><th>Producto</th><th>Cambios</th><th>Precio inicial → final</th><th>Diferencia</th><th>Último cambio</th></tr></thead><tbody>{changeProducts.map((product) => <tr key={product.id} className={selected?.id === product.id ? "selected-change" : ""} onClick={() => setSelected(product)}><td><b>{product.name}</b><small>{product.externalId}</small></td><td><strong>{product.changeCount}</strong><small>movimientos</small></td><td>{product.initialPrice == null || product.finalPrice == null ? "—" : `${money.format(product.initialPrice)} → ${money.format(product.finalPrice)}`}</td><td className={changeClass(product.netDifferenceUsd)}><b>{product.netDifferenceUsd == null ? "—" : `${product.netDifferenceUsd > 0 ? "+" : ""}${money.format(product.netDifferenceUsd)}`}</b><small>{product.netChangePct == null ? "" : `${product.netChangePct > 0 ? "+" : ""}${product.netChangePct.toFixed(1)}% acumulado`}</small></td><td>{formatDate(product.latestChangeAt)}</td></tr>)}</tbody></table></div>}
+                {changeProducts.length > 0 && <div className="changes-load-more">{hasMoreChanges ? <button onClick={() => void loadMoreChanges()} disabled={loadingMoreChanges}>{loadingMoreChanges ? "Cargando…" : "Cargar 50 productos más"}</button> : <span>Se mostraron todos los productos con cambios</span>}</div>}
+              </article>
+              <article className="change-detail-card">
+                {selectedChange ? <><div className="change-detail-head"><div><span className="eyebrow-dark">Detalle del período</span><h2>{selectedChange.name}</h2><p>SAP {selectedChange.externalId} · {selectedChange.changeCount} cambios {changeDays === "1" ? "durante el día" : changeDays === "all" ? "en todo el histórico" : `en ${changeDays} días`}</p></div><div className={changeClass(selectedChange.netDifferenceUsd)}><strong>{selectedChange.netDifferenceUsd == null ? "—" : `${selectedChange.netDifferenceUsd > 0 ? "+" : ""}${money.format(selectedChange.netDifferenceUsd)}`}</strong><span>{selectedChange.netChangePct == null ? "Sin comparación" : `${selectedChange.netChangePct > 0 ? "+" : ""}${selectedChange.netChangePct.toFixed(1)}% acumulado`}</span></div></div>
+                  {history.length > 0 && <><div className="chart-caption">Gráfico de las últimas 90 capturas · la tabla conserva todos los movimientos</div><svg className="price-chart change-chart" viewBox="0 0 760 245" role="img" aria-label="Evolución histórica del precio"><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-line" d={chart.line}/>{chart.dots.map((dot, index) => <circle key={index} className="chart-point" cx={dot.x} cy={dot.y} r="4"/>)}</svg></>}
+                  <div className="history-table"><div className="section-head"><h2>Movimientos individuales</h2><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los movimientos del período" : "No existen movimientos con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
+              </article>
+            </section>
+          </>}
           <section className="roadmap"><div><strong>Preparado para crecer hacia el benchmarking competitivo</strong><span>La estructura admite nuevas tiendas sin perder el histórico de Daka.</span></div><div className="stages"><span className="stage">Fase 1 · Daka</span><span>→</span><span className="stage future">Fase 2 · Competidores</span><span>→</span><span className="stage future">Comparador</span></div></section>
         </main>
       ) : (
