@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
+    const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "daka";
+    const source = ["daka", "damasco"].includes(requestedSource) ? requestedSource : "daka";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const requestedPeriod = request.nextUrl.searchParams.get("days") ?? "30";
     const period = ["1", "7", "30", "90", "all"].includes(requestedPeriod) ? requestedPeriod : "30";
@@ -21,12 +23,12 @@ export async function GET(request: NextRequest) {
     const searchLike = `%${search}%`;
 
     const rows = await sql`
-      WITH daka_source AS (
-        SELECT id FROM sources WHERE slug = 'daka'
+      WITH selected_source AS (
+        SELECT id FROM sources WHERE slug = ${source}
       ), latest_successful_job AS (
         SELECT id
         FROM scraping_jobs
-        WHERE source_id = (SELECT id FROM daka_source)
+        WHERE source_id = (SELECT id FROM selected_source)
           AND status = 'success'
         ORDER BY started_at DESC
         LIMIT 1
@@ -40,6 +42,8 @@ export async function GET(request: NextRequest) {
             ORDER BY ph.scraped_at
           ) AS previous_price
         FROM price_history ph
+        JOIN products ordered_product ON ordered_product.id = ph.product_id
+        WHERE ordered_product.source_id = (SELECT id FROM selected_source)
       ), filtered_changes AS (
         SELECT
           op.product_id,
@@ -72,8 +76,10 @@ export async function GET(request: NextRequest) {
         SELECT mc.*
         FROM matching_changes mc
         JOIN products eligible_product ON eligible_product.id = mc.product_id
-        WHERE eligible_product.source_id = (SELECT id FROM daka_source)
-          AND (${search} = '' OR eligible_product.name ILIKE ${searchLike} OR eligible_product.external_id ILIKE ${searchLike})
+        WHERE eligible_product.source_id = (SELECT id FROM selected_source)
+          AND (${search} = '' OR eligible_product.name ILIKE ${searchLike} OR eligible_product.external_id ILIKE ${searchLike}
+            OR COALESCE(eligible_product.brand, '') ILIKE ${searchLike}
+            OR COALESCE(eligible_product.model, '') ILIKE ${searchLike})
           AND (
             ${status} = 'all'
             OR NOT EXISTS (SELECT 1 FROM latest_successful_job)
@@ -101,6 +107,7 @@ export async function GET(request: NextRequest) {
       )
       SELECT
         p.id, p.external_id, p.name, p.category, p.url, p.last_seen_at,
+        p.brand, p.model,
         pc.change_count, pc.initial_price, pc.final_price, pc.latest_change_at,
         pc.largest_change_pct,
         pc.final_price - pc.initial_price AS net_difference_usd,
@@ -139,7 +146,9 @@ export async function GET(request: NextRequest) {
       netDifferenceUsd: row.net_difference_usd == null ? null : asNumber(row.net_difference_usd),
       netChangePct: row.net_change_pct == null ? null : asNumber(row.net_change_pct),
       largestChangePct: row.largest_change_pct == null ? null : asNumber(row.largest_change_pct),
-      latestChangeAt: row.latest_change_at ?? null
+      latestChangeAt: row.latest_change_at ?? null,
+      brand: row.brand ?? null,
+      model: row.model ?? null
     }));
     const total = rows.length ? asNumber(rows[0].total_count) : 0;
 

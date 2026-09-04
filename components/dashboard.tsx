@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import type { DashboardData, JobSummary, ProductSummary } from "@/lib/types";
 import CompetitorComparison from "@/components/competitor-comparison";
+import DamascoCatalog from "@/components/damasco-catalog";
 
 type PricePoint = {
   price: number;
@@ -12,7 +13,7 @@ type PricePoint = {
   changePct: number | null;
 };
 type View = "prices" | "operations";
-type PriceTab = "explore" | "changes" | "competitors";
+type PriceTab = "explore" | "changes" | "damasco" | "competitors";
 type ChangeProduct = ProductSummary & {
   changeCount: number;
   initialPrice: number | null;
@@ -492,7 +493,7 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => setPriceTab("competitors")}>Competidores</button></div>
+          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => setPriceTab("damasco")}>Catálogo Damasco</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => setPriceTab("competitors")}>Comparador</button></div>
           {priceTab === "explore" ? <>
           <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Estado del producto" value={productStatus} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>Últimos 90 días</option></select></section>
 
@@ -525,7 +526,7 @@ export default function Dashboard() {
                   <div className="history-table"><div className="section-head"><h2>Movimientos individuales</h2><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los movimientos del período" : "No existen movimientos con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
               </article>
             </section>
-          </> : <CompetitorComparison/>}
+          </> : priceTab === "damasco" ? <DamascoCatalog/> : <CompetitorComparison/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage future">Próximos competidores</span></div></section>
         </main>
       ) : (

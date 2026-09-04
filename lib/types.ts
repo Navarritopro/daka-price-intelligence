@@ -10,6 +10,11 @@ export type ProductSummary = {
   scrapedAt: string | null;
   seenInLatest: boolean;
   lastSeenAt: string | null;
+  brand?: string | null;
+  model?: string | null;
+  listPrice?: number | null;
+  inStock?: boolean | null;
+  availableQuantity?: number | null;
 };
 
 export type DashboardData = {
