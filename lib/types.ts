@@ -8,11 +8,15 @@ export type ProductSummary = {
   previousPrice: number | null;
   changePct: number | null;
   scrapedAt: string | null;
+  seenInLatest: boolean;
+  lastSeenAt: string | null;
 };
 
 export type DashboardData = {
   source: string;
   productsMonitored: number;
+  productsHistorical: number;
+  productsNotSeen: number;
   productsWithPrice: number;
   changesToday: number;
   priceDropsToday: number;
