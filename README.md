@@ -1,6 +1,6 @@
 # DAKA Price Lab
 
-Aplicación de inteligencia de precios para Tiendas Daka. La Fase 1 captura diariamente el catálogo de `tiendasdaka.com`, conserva el histórico en USD y permite revisar variaciones, ejecuciones y alertas desde un panel web.
+Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el catálogo de `tiendasdaka.com`, conserva el histórico en USD y compara productos homologados con Damasco.
 
 ## Alcance de la Fase 1
 
@@ -142,4 +142,11 @@ python scraper/scrape.py
 
 ## Fase 2
 
-La tabla `sources` y la clave única `(source_id, external_id)` permiten incorporar competidores sin mezclar identificadores. La siguiente fase deberá sumar homologación de productos para comparar artículos equivalentes entre tiendas.
+La primera integración competitiva incorpora Damasco mediante su catálogo público VTEX:
+
+1. Ejecutar `db/phase2_damasco.sql` una sola vez en Neon.
+2. Publicar `.github/workflows/scrape-damasco.yml` y los nuevos archivos del scraper.
+3. Ejecutar manualmente **Scraping diario Damasco** desde GitHub Actions para crear la primera captura.
+4. Abrir la pestaña **Competidores** del dashboard.
+
+La homologación automática exige una confianza mínima de 90%. Las coincidencias dudosas quedan en estado `review` y no se presentan como equivalencias hasta ser validadas. Cada fuente conserva su propio producto, job, precio, stock e histórico.

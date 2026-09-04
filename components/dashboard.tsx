@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import type { DashboardData, JobSummary, ProductSummary } from "@/lib/types";
+import CompetitorComparison from "@/components/competitor-comparison";
 
 type PricePoint = {
   price: number;
@@ -11,7 +12,7 @@ type PricePoint = {
   changePct: number | null;
 };
 type View = "prices" | "operations";
-type PriceTab = "explore" | "changes";
+type PriceTab = "explore" | "changes" | "competitors";
 type ChangeProduct = ProductSummary & {
   changeCount: number;
   initialPrice: number | null;
@@ -482,7 +483,7 @@ export default function Dashboard() {
       {view === "prices" ? (
         <main>
           <section className="hero-grid">
-            <article className="intro-card"><div className="eyebrow">Inteligencia de precios · Fase 1</div><h1>El histórico del catálogo Daka, en una sola vista.</h1><p>Seguimiento diario en USD, identificación de variaciones y trazabilidad exacta de cada captura.</p></article>
+            <article className="intro-card"><div className="eyebrow">Inteligencia de precios · Fases 1 y 2</div><h1>El mercado y el histórico de DAKA, en una sola vista.</h1><p>Seguimiento diario en USD, variaciones históricas y comparación competitiva con homologación auditable.</p></article>
             <div className="hero-stats">
               <article className="stat-card"><span>Catálogo actual</span><strong>{loading ? "…" : integer.format(summary?.productsMonitored ?? 0)}</strong><em>{integer.format(summary?.productsHistorical ?? 0)} históricos · {integer.format(summary?.productsNotSeen ?? 0)} no vistos</em></article>
               <article className="stat-card accent"><span>Oportunidades de rebaja</span><strong>{loading ? "…" : integer.format(summary?.priceDropsToday ?? 0)}</strong><em>Detectadas hoy</em></article>
@@ -491,7 +492,7 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className="tab locked" title="Disponible en Fase 2">🔒 Competidores</button></div>
+          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => setPriceTab("competitors")}>Competidores</button></div>
           {priceTab === "explore" ? <>
           <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Estado del producto" value={productStatus} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>Últimos 90 días</option></select></section>
 
@@ -510,7 +511,7 @@ export default function Dashboard() {
                 <div className="history-table"><div className="section-head"><h2>Últimas capturas</h2><small>Fecha y hora exactas · VET</small></div><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio USD</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{history.slice(0, 10).map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div></div></> : <div className="empty-state detail-empty">Selecciona un producto para consultar su histórico.</div>}
             </article>
           </section>
-          </> : <>
+          </> : priceTab === "changes" ? <>
             <section className="filters change-filters"><input aria-label="Buscar producto con cambios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Período de cambios" value={changeDays} onChange={(event) => setChangeDays(event.target.value)}><option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select aria-label="Tipo de movimiento" value={changeMovement} onChange={(event) => setChangeMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select aria-label="Magnitud mínima" value={changeThreshold} onChange={(event) => setChangeThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select aria-label="Estado del catálogo" value={changeStatus} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></section>
             <section className="changes-summary"><article><span>Productos con cambios</span><strong>{changesLoading ? "…" : integer.format(changeStats.productsChanged)}</strong></article><article><span>Movimientos registrados</span><strong>{changesLoading ? "…" : integer.format(changeStats.totalChanges)}</strong></article><article className="drop"><span>Rebajas</span><strong>{changesLoading ? "…" : integer.format(changeStats.drops)}</strong></article><article className="rise"><span>Aumentos</span><strong>{changesLoading ? "…" : integer.format(changeStats.increases)}</strong></article></section>
             <section className="changes-grid">
@@ -524,8 +525,8 @@ export default function Dashboard() {
                   <div className="history-table"><div className="section-head"><h2>Movimientos individuales</h2><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los movimientos del período" : "No existen movimientos con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
               </article>
             </section>
-          </>}
-          <section className="roadmap"><div><strong>Preparado para crecer hacia el benchmarking competitivo</strong><span>La estructura admite nuevas tiendas sin perder el histórico de Daka.</span></div><div className="stages"><span className="stage">Fase 1 · Daka</span><span>→</span><span className="stage future">Fase 2 · Competidores</span><span>→</span><span className="stage future">Comparador</span></div></section>
+          </> : <CompetitorComparison/>}
+          <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage future">Próximos competidores</span></div></section>
         </main>
       ) : (
         <main className="operations-shell">

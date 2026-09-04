@@ -10,8 +10,9 @@ from psycopg.rows import dict_row
 
 
 class Database:
-    def __init__(self, database_url: str):
+    def __init__(self, database_url: str, source_slug: str = "daka"):
         self.database_url = database_url
+        self.source_slug = source_slug
 
     def _connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row)
@@ -22,9 +23,9 @@ class Database:
             conn.execute(
                 """
                 INSERT INTO scraping_jobs (id, source_id, trigger_type, status)
-                SELECT %s, id, %s, 'running' FROM sources WHERE slug = 'daka'
+                SELECT %s, id, %s, 'running' FROM sources WHERE slug = %s
                 """,
-                (job_id, trigger_type),
+                (job_id, trigger_type, self.source_slug),
             )
         return job_id
 
@@ -49,38 +50,55 @@ class Database:
                       progress_callback=None) -> int:
         saved = 0
         with self._connect() as conn:
-            source_id = conn.execute("SELECT id FROM sources WHERE slug = 'daka'").fetchone()["id"]
+            source_row = conn.execute(
+                "SELECT id FROM sources WHERE slug = %s", (self.source_slug,)
+            ).fetchone()
+            if not source_row:
+                raise RuntimeError(f"La fuente {self.source_slug!r} no existe en sources")
+            source_id = source_row["id"]
             for product in products:
                 if not product.external_id:
                     continue
                 row = conn.execute(
                     """
                     INSERT INTO products
-                      (source_id, external_id, name, category, url, image_url, last_seen_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                      (source_id, external_id, name, category, url, image_url, brand,
+                       model, metadata, last_seen_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
                     ON CONFLICT (source_id, external_id) DO UPDATE SET
                       name = EXCLUDED.name,
                       category = COALESCE(EXCLUDED.category, products.category),
                       url = EXCLUDED.url,
                       image_url = EXCLUDED.image_url,
+                      brand = COALESCE(EXCLUDED.brand, products.brand),
+                      model = COALESCE(EXCLUDED.model, products.model),
+                      metadata = products.metadata || EXCLUDED.metadata,
                       active = TRUE,
                       last_seen_at = EXCLUDED.last_seen_at
                     RETURNING id
                     """,
                     (source_id, product.external_id, product.name, product.category,
-                     product.url, product.image_url, product.scraped_at),
+                     product.url, product.image_url, getattr(product, "brand", None),
+                     getattr(product, "model", None),
+                     json.dumps(getattr(product, "metadata", {}) or {}, ensure_ascii=False),
+                     product.scraped_at),
                 ).fetchone()
                 conn.execute(
                     """
                     INSERT INTO price_history
-                      (product_id, job_id, price_usd, scraped_at, in_stock)
-                    VALUES (%s, %s, %s, %s, %s)
+                      (product_id, job_id, price_usd, scraped_at, in_stock,
+                       list_price_usd, available_quantity)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (product_id, job_id) DO UPDATE SET
                       price_usd = EXCLUDED.price_usd,
                       scraped_at = EXCLUDED.scraped_at,
-                      in_stock = EXCLUDED.in_stock
+                      in_stock = EXCLUDED.in_stock,
+                      list_price_usd = EXCLUDED.list_price_usd,
+                      available_quantity = EXCLUDED.available_quantity
                     """,
-                    (row["id"], job_id, product.price_usd, product.scraped_at, product.in_stock),
+                    (row["id"], job_id, product.price_usd, product.scraped_at,
+                     product.in_stock, getattr(product, "list_price_usd", None),
+                     getattr(product, "available_quantity", None)),
                 )
                 saved += 1
                 if progress_callback and saved % 100 == 0:
