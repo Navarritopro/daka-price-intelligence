@@ -9,12 +9,23 @@ export async function GET(request: NextRequest) {
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
     const change = request.nextUrl.searchParams.get("change")?.trim() ?? "all";
+    const requestedStatus = request.nextUrl.searchParams.get("status")?.trim() ?? "current";
+    const status = ["current", "missing", "all"].includes(requestedStatus) ? requestedStatus : "current";
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
     const searchLike = `%${search}%`;
 
     const rows = await sql`
-      WITH ranked AS (
+      WITH daka_source AS (
+        SELECT id FROM sources WHERE slug = 'daka'
+      ), latest_successful_job AS (
+        SELECT id
+        FROM scraping_jobs
+        WHERE source_id = (SELECT id FROM daka_source)
+          AND status = 'success'
+        ORDER BY started_at DESC
+        LIMIT 1
+      ), ranked AS (
         SELECT
           ph.product_id, ph.price_usd, ph.scraped_at,
           LAG(ph.price_usd) OVER (PARTITION BY ph.product_id ORDER BY ph.scraped_at) AS previous_price,
@@ -26,14 +37,34 @@ export async function GET(request: NextRequest) {
           ELSE ROUND(((price_usd - previous_price) / previous_price) * 100, 2) END AS change_pct
         FROM ranked WHERE rn = 1
       )
-      SELECT p.id, p.external_id, p.name, p.category, p.url,
+      SELECT p.id, p.external_id, p.name, p.category, p.url, p.last_seen_at,
         COUNT(*) OVER()::int AS total_count,
-        cp.price_usd, cp.previous_price, cp.change_pct, cp.scraped_at
+        cp.price_usd, cp.previous_price, cp.change_pct, cp.scraped_at,
+        EXISTS (
+          SELECT 1
+          FROM price_history latest_ph
+          WHERE latest_ph.product_id = p.id
+            AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
+        ) AS seen_in_latest
       FROM products p
       JOIN sources s ON s.id = p.source_id AND s.slug = 'daka'
       LEFT JOIN current_prices cp ON cp.product_id = p.id
       WHERE (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike})
         AND (${category} = '' OR p.category = ${category})
+        AND (
+          ${status} = 'all'
+          OR NOT EXISTS (SELECT 1 FROM latest_successful_job)
+          OR (${status} = 'current' AND EXISTS (
+            SELECT 1 FROM price_history latest_ph
+            WHERE latest_ph.product_id = p.id
+              AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
+          ))
+          OR (${status} = 'missing' AND NOT EXISTS (
+            SELECT 1 FROM price_history latest_ph
+            WHERE latest_ph.product_id = p.id
+              AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
+          ))
+        )
         AND (
           ${change} = 'all'
           OR (${change} = 'down' AND cp.change_pct < 0)
@@ -54,7 +85,9 @@ export async function GET(request: NextRequest) {
       currentPrice: row.price_usd == null ? null : asNumber(row.price_usd),
       previousPrice: row.previous_price == null ? null : asNumber(row.previous_price),
       changePct: row.change_pct == null ? null : asNumber(row.change_pct),
-      scrapedAt: row.scraped_at ?? null
+      scrapedAt: row.scraped_at ?? null,
+      seenInLatest: Boolean(row.seen_in_latest),
+      lastSeenAt: row.last_seen_at ?? null
     }));
     const total = rows.length ? asNumber(rows[0].total_count) : 0;
 
