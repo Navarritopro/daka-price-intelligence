@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import type { DashboardData, JobSummary, ProductSummary } from "@/lib/types";
 
 type PricePoint = { price: number; scrapedAt: string; changePct: number | null };
@@ -13,6 +13,18 @@ type ScrapeRequest = {
   finishedAt: string | null;
   errorMessage: string | null;
 };
+type ProductPage = {
+  items: ProductSummary[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+};
+
+const PRODUCT_BATCH_SIZE = 50;
+const PRODUCT_ROW_HEIGHT = 112;
+const PRODUCT_VIEWPORT_HEIGHT = 680;
+const PRODUCT_OVERSCAN = 5;
 
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
@@ -67,31 +79,38 @@ export default function Dashboard() {
   const [selected, setSelected] = useState<ProductSummary | null>(null);
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [changeFilter, setChangeFilter] = useState("all");
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [hasMoreProducts, setHasMoreProducts] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
+  const [productLoadError, setProductLoadError] = useState<string | null>(null);
+  const [productScrollTop, setProductScrollTop] = useState(0);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const productListRef = useRef<HTMLDivElement>(null);
+  const productQueryVersion = useRef(0);
+  const loadingMoreRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [summaryResponse, productResponse, jobsResponse, requestResponse] = await Promise.all([
+      const [summaryResponse, jobsResponse, requestResponse] = await Promise.all([
         fetch("/api/dashboard", { cache: "no-store" }),
-        fetch("/api/products?limit=100", { cache: "no-store" }),
         fetch("/api/jobs", { cache: "no-store" }),
         fetch("/api/requests", { cache: "no-store" })
       ]);
-      if (!summaryResponse.ok || !productResponse.ok || !jobsResponse.ok || !requestResponse.ok) throw new Error("API unavailable");
-      const [summaryData, productData, jobsData, requestData] = await Promise.all([
-        summaryResponse.json(), productResponse.json(), jobsResponse.json(), requestResponse.json()
+      if (!summaryResponse.ok || !jobsResponse.ok || !requestResponse.ok) throw new Error("API unavailable");
+      const [summaryData, jobsData, requestData] = await Promise.all([
+        summaryResponse.json(), jobsResponse.json(), requestResponse.json()
       ]);
       setSummary(summaryData);
-      setProducts(productData);
       setJobs(jobsData);
       setLatestRequest(requestData);
-      setSelected((current) => current ?? productData[0] ?? null);
     } catch {
       setError("No fue posible cargar la información. Verifica la conexión con PostgreSQL.");
     } finally {
@@ -100,6 +119,85 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const version = ++productQueryVersion.current;
+    const params = new URLSearchParams({
+      limit: String(PRODUCT_BATCH_SIZE),
+      offset: "0",
+      search: debouncedSearch,
+      change: changeFilter
+    });
+
+    setProductsLoading(true);
+    setProductLoadError(null);
+    setProducts([]);
+    setTotalProducts(0);
+    setHasMoreProducts(false);
+    setSelected(null);
+    setProductScrollTop(0);
+    productListRef.current?.scrollTo({ top: 0 });
+
+    fetch(`/api/products?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Products unavailable")))
+      .then((page: ProductPage) => {
+        if (version !== productQueryVersion.current) return;
+        setProducts(page.items);
+        setTotalProducts(page.total);
+        setHasMoreProducts(page.hasMore);
+        setSelected(page.items[0] ?? null);
+      })
+      .catch((requestError) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        if (version !== productQueryVersion.current) return;
+        setProductLoadError("No fue posible cargar el catálogo. Intenta nuevamente.");
+      })
+      .finally(() => {
+        if (version === productQueryVersion.current) setProductsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [debouncedSearch, changeFilter]);
+
+  const loadMoreProductResults = useCallback(async () => {
+    if (loadingMoreRef.current || productsLoading || !hasMoreProducts) return;
+    loadingMoreRef.current = true;
+    setLoadingMoreProducts(true);
+    const version = productQueryVersion.current;
+    const params = new URLSearchParams({
+      limit: String(PRODUCT_BATCH_SIZE),
+      offset: String(products.length),
+      search: debouncedSearch,
+      change: changeFilter
+    });
+
+    try {
+      const response = await fetch(`/api/products?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Products unavailable");
+      const page: ProductPage = await response.json();
+      if (version !== productQueryVersion.current) return;
+      setProducts((current) => {
+        const known = new Set(current.map((product) => product.id));
+        return [...current, ...page.items.filter((product) => !known.has(product.id))];
+      });
+      setTotalProducts(page.total);
+      setHasMoreProducts(page.hasMore);
+      setProductLoadError(null);
+    } catch {
+      if (version === productQueryVersion.current) {
+        setProductLoadError("No se pudo cargar el siguiente grupo de productos.");
+      }
+    } finally {
+      if (version === productQueryVersion.current) setLoadingMoreProducts(false);
+      loadingMoreRef.current = false;
+    }
+  }, [changeFilter, debouncedSearch, hasMoreProducts, products.length, productsLoading]);
 
   useEffect(() => {
     const hasActiveExecution = latestRequest?.status === "queued" || latestRequest?.status === "running" || jobs[0]?.status === "running";
@@ -132,15 +230,21 @@ export default function Dashboard() {
       .catch(() => setHistory([]));
   }, [selected]);
 
-  const filteredProducts = useMemo(() => products.filter((product) => {
-    const query = search.trim().toLowerCase();
-    const matchesSearch = !query || product.name.toLowerCase().includes(query) || product.externalId.toLowerCase().includes(query);
-    const matchesChange = changeFilter === "all" ||
-      (changeFilter === "down" && (product.changePct ?? 0) < 0) ||
-      (changeFilter === "up" && (product.changePct ?? 0) > 0) ||
-      (changeFilter === "same" && (product.changePct ?? 0) === 0);
-    return matchesSearch && matchesChange;
-  }), [products, search, changeFilter]);
+  const virtualStart = Math.max(0, Math.floor(productScrollTop / PRODUCT_ROW_HEIGHT) - PRODUCT_OVERSCAN);
+  const virtualEnd = Math.min(
+    products.length,
+    Math.ceil((productScrollTop + PRODUCT_VIEWPORT_HEIGHT) / PRODUCT_ROW_HEIGHT) + PRODUCT_OVERSCAN
+  );
+  const visibleProducts = products.slice(virtualStart, virtualEnd);
+  const productListHeight = products.length * PRODUCT_ROW_HEIGHT + 52;
+
+  function handleProductScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    setProductScrollTop(element.scrollTop);
+    if (element.scrollTop + element.clientHeight >= element.scrollHeight - PRODUCT_ROW_HEIGHT * 4) {
+      void loadMoreProductResults();
+    }
+  }
 
   const chart = useMemo(() => chartPath(history), [history]);
 
@@ -220,9 +324,17 @@ export default function Dashboard() {
           <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Categoría" disabled><option>Todas las categorías</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>Últimos 90 días</option></select></section>
 
           <section className="content-grid">
-            <article className="product-list"><div className="section-head"><h2>Productos monitoreados</h2><small>{filteredProducts.length} resultados</small></div><div className="product-scroll">
-              {!loading && filteredProducts.length === 0 && <div className="empty-state">No hay productos que coincidan con los filtros.</div>}
-              {filteredProducts.map((product) => <button key={product.id} className={selected?.id === product.id ? "product-row active" : "product-row"} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.category ?? "Sin categoría"}</p></div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span></div></button>)}
+            <article className="product-list"><div className="section-head"><h2>Productos monitoreados</h2><small>{productsLoading ? "Consultando catálogo…" : `Mostrando ${integer.format(products.length)} de ${integer.format(totalProducts)}`}</small></div><div className="product-scroll" ref={productListRef} onScroll={handleProductScroll}>
+              {productsLoading && <div className="empty-state">Buscando productos en todo el catálogo…</div>}
+              {!productsLoading && productLoadError && products.length === 0 && <div className="empty-state product-error">{productLoadError}</div>}
+              {!productsLoading && !productLoadError && products.length === 0 && <div className="empty-state">No encontramos productos con ese nombre o código SAP.</div>}
+              {products.length > 0 && <div className="product-virtual-space" style={{ height: productListHeight }}>
+                {visibleProducts.map((product, visibleIndex) => {
+                  const absoluteIndex = virtualStart + visibleIndex;
+                  return <button key={product.id} aria-posinset={absoluteIndex + 1} aria-setsize={totalProducts} className={selected?.id === product.id ? "product-row virtual-product-row active" : "product-row virtual-product-row"} style={{ transform: `translateY(${absoluteIndex * PRODUCT_ROW_HEIGHT}px)` }} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.category ?? "Sin categoría"}</p></div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span></div></button>;
+                })}
+                <div className="product-load-state" style={{ transform: `translateY(${products.length * PRODUCT_ROW_HEIGHT}px)` }}>{loadingMoreProducts ? "Cargando más productos…" : hasMoreProducts ? "Desplázate para continuar cargando" : "Se mostraron todos los productos"}{productLoadError && products.length > 0 ? ` · ${productLoadError}` : ""}</div>
+              </div>}
             </div></article>
             <article className="detail-card">
               {selected ? <><div className="detail-main"><div className="detail-title"><div><h2>{selected.name}</h2><div className="meta"><span className="source-badge">D</span> Tiendas Daka · SAP {selected.externalId}</div></div><div className="current-price"><span className="meta">Precio actual</span><strong>{selected.currentPrice == null ? "Sin precio" : money.format(selected.currentPrice)}</strong><span className={`variation ${changeClass(selected.changePct)}`}>{selected.changePct == null ? "Sin comparación" : `${selected.changePct > 0 ? "+" : ""}${selected.changePct.toFixed(1)}% vs. captura anterior`}</span></div></div>
