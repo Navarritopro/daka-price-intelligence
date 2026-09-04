@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from matching import infer_brand, model_tokens, normalize, similarity
+from matching import attribute_signature, infer_brand, model_tokens, normalize, product_type, similarity
 
 
 class CompetitorMatchingTests(unittest.TestCase):
@@ -35,6 +35,25 @@ class CompetitorMatchingTests(unittest.TestCase):
         )
         self.assertEqual(score, 0)
         self.assertEqual(method, "brand_conflict")
+
+    def test_brand_from_name_overrides_incorrect_catalog_brand(self):
+        self.assertEqual(infer_brand("INFINIX HOT 70 PRO", "Samsung"), "infinix")
+
+    def test_product_type_synonyms(self):
+        self.assertEqual(product_type("Refrigerador Samsung 300 litros"), "nevera")
+
+    def test_decimal_capacity_is_preserved(self):
+        self.assertIn("1.5:l", attribute_signature("Licuadora de 1,5 litros"))
+
+    def test_attributes_create_review_not_automatic_match(self):
+        score, method, evidence = similarity(
+            {"name": "Lavadora carga superior de 21 kg Samsung", "brand": None, "model": None},
+            {"name": "Lavadora Samsung 21Kg WA21B3543GW", "brand": "Samsung", "model": None},
+        )
+        self.assertGreaterEqual(score, 0.72)
+        self.assertLess(score, 0.90)
+        self.assertEqual(method, "brand_type_attributes")
+        self.assertIn("21:kg", evidence["sharedAttributes"])
 
 
 if __name__ == "__main__":

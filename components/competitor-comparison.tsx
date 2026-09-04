@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import MatchReview from "@/components/match-review";
 
 type StoreProduct = {
   id: number;
@@ -66,6 +67,8 @@ function positionLabel(item: Comparison) {
 }
 
 export default function CompetitorComparison() {
+  const [mode, setMode] = useState<"comparison" | "review">("comparison");
+  const [refreshToken, setRefreshToken] = useState(0);
   const [items, setItems] = useState<Comparison[]>([]);
   const [selected, setSelected] = useState<Comparison | null>(null);
   const [stats, setStats] = useState<ComparisonStats>(EMPTY_STATS);
@@ -122,7 +125,7 @@ export default function CompetitorComparison() {
         if (queryVersion.current === version) setLoading(false);
       });
     return () => controller.abort();
-  }, [parameters]);
+  }, [parameters, refreshToken]);
 
   const loadMore = useCallback(async () => {
     if (!hasMore || loading || loadingMore) return;
@@ -144,10 +147,25 @@ export default function CompetitorComparison() {
     }
   }, [hasMore, items.length, loading, loadingMore, parameters]);
 
+  if (mode === "review") {
+    return <MatchReview
+      onBack={() => {
+        setRefreshToken((current) => current + 1);
+        setMode("comparison");
+      }}
+      onDecision={() => setRefreshToken((current) => current + 1)}
+    />;
+  }
+
   return <>
     <section className="competitor-overview">
       <div><span className="eyebrow-dark">Benchmarking competitivo · Fase 2</span><h2>DAKA frente a Damasco</h2><p>Solo se comparan productos equivalentes con coincidencia automática de alta confianza o validación confirmada.</p></div>
-      <div className="competitor-freshness"><span>Última captura Damasco</span><strong>{formatDate(stats.competitorLastScrapeAt)}</strong></div>
+      <div className="competitor-overview-actions">
+        <div className="competitor-freshness"><span>Última captura Damasco</span><strong>{formatDate(stats.competitorLastScrapeAt)}</strong></div>
+        <button className="secondary-button" type="button" onClick={() => setMode("review")}>
+          Revisar {integer.format(stats.reviewPending)} candidatos
+        </button>
+      </div>
     </section>
 
     <section className="comparison-stats">
