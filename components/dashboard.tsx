@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
-import type { DashboardData, JobSummary, ProductSummary } from "@/lib/types";
+import type { DashboardData, JobsResponse, JobSummary, MonitoringSourceSummary, ProductSummary } from "@/lib/types";
 import CompetitorComparison from "@/components/competitor-comparison";
 import DamascoCatalog from "@/components/damasco-catalog";
+import TechnicalMonitoring from "@/components/technical-monitoring";
 
 type PricePoint = {
   price: number;
@@ -108,6 +109,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
+  const [monitoringSources, setMonitoringSources] = useState<MonitoringSourceSummary[]>([]);
   const [latestRequest, setLatestRequest] = useState<ScrapeRequest | null>(null);
   const [selected, setSelected] = useState<ProductSummary | null>(null);
   const [history, setHistory] = useState<PricePoint[]>([]);
@@ -155,11 +157,12 @@ export default function Dashboard() {
         fetch("/api/requests", { cache: "no-store" })
       ]);
       if (!summaryResponse.ok || !jobsResponse.ok || !requestResponse.ok) throw new Error("API unavailable");
-      const [summaryData, jobsData, requestData] = await Promise.all([
+      const [summaryData, jobsData, requestData]: [DashboardData, JobsResponse, ScrapeRequest | null] = await Promise.all([
         summaryResponse.json(), jobsResponse.json(), requestResponse.json()
       ]);
       setSummary(summaryData);
-      setJobs(jobsData);
+      setJobs(jobsData.items);
+      setMonitoringSources(jobsData.sources);
       setLatestRequest(requestData);
     } catch {
       setError("No fue posible cargar la información. Verifica la conexión con PostgreSQL.");
@@ -322,7 +325,7 @@ export default function Dashboard() {
   }, [changeDays, changeMovement, changeProducts.length, changeStatus, changeThreshold, changesLoading, debouncedSearch, hasMoreChanges, loadingMoreChanges]);
 
   useEffect(() => {
-    const hasActiveExecution = latestRequest?.status === "queued" || latestRequest?.status === "running" || jobs[0]?.status === "running";
+    const hasActiveExecution = latestRequest?.status === "queued" || latestRequest?.status === "running" || jobs.some((job) => job.status === "running");
     if (!hasActiveExecution) return;
     const timer = window.setInterval(async () => {
       try {
@@ -331,18 +334,19 @@ export default function Dashboard() {
           fetch("/api/requests", { cache: "no-store" })
         ]);
         if (!jobsResponse.ok || !requestResponse.ok) return;
-        const [updatedJobs, updatedRequest]: [JobSummary[], ScrapeRequest | null] = await Promise.all([
+        const [updatedJobs, updatedRequest]: [JobsResponse, ScrapeRequest | null] = await Promise.all([
           jobsResponse.json(), requestResponse.json()
         ]);
-        setJobs(updatedJobs);
+        setJobs(updatedJobs.items);
+        setMonitoringSources(updatedJobs.sources);
         setLatestRequest(updatedRequest);
-        if (jobs[0]?.status === "running" && updatedJobs[0]?.status !== "running") void load();
+        if (jobs.some((job) => job.status === "running") && !updatedJobs.items.some((job) => job.status === "running")) void load();
       } catch {
         // El siguiente ciclo reintenta automáticamente.
       }
     }, 10_000);
     return () => window.clearInterval(timer);
-  }, [jobs[0]?.status, latestRequest?.status, load]);
+  }, [jobs, latestRequest?.status, load]);
 
   useEffect(() => {
     if (!selected) { setHistory([]); return; }
@@ -447,18 +451,10 @@ export default function Dashboard() {
     }
   }
 
-  const latestJob = jobs[0] ?? null;
+  const latestDakaJob = jobs.find((job) => job.source === "daka") ?? null;
   const requestWaiting = latestRequest?.status === "queued";
-  const requestPreparing = latestRequest?.status === "running" && latestJob?.status !== "running";
-  const executionBusy = running || requestWaiting || requestPreparing || latestJob?.status === "running";
-  const previousSuccessfulJob = jobs.find((job, index) => index > 0 && job.status === "success" && job.pagesScanned > 0);
-  const expectedPages = previousSuccessfulJob?.pagesScanned ?? 138;
-  const expectedProducts = previousSuccessfulJob?.productsFound ?? summary?.productsMonitored ?? 2205;
-  const progressPercent = latestJob?.status === "success" ? 100 : latestJob?.status === "running"
-    ? latestJob.productsSaved > 0
-      ? Math.min(99, Math.round(80 + (latestJob.productsSaved / Math.max(expectedProducts, 1)) * 19))
-      : Math.min(80, Math.round((latestJob.pagesScanned / Math.max(expectedPages, 1)) * 80))
-    : 0;
+  const requestPreparing = latestRequest?.status === "running" && latestDakaJob?.status !== "running";
+  const executionBusy = running || requestWaiting || requestPreparing || latestDakaJob?.status === "running";
   const prices = history.map((point) => point.price);
   const maxPrice = prices.length ? Math.max(...prices) : null;
   const minPrice = prices.length ? Math.min(...prices) : null;
@@ -474,7 +470,7 @@ export default function Dashboard() {
           <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => setView("operations")}>Monitoreo técnico</button>
         </nav>
         <div className="header-actions">
-          <span className="next-run">Próxima ejecución · 09:00 AM VET</span>
+          <span className="next-run">Damasco diario · 09:07 AM VET</span>
           <button className="primary-button" onClick={triggerScrape} disabled={executionBusy}>{running ? "Iniciando…" : executionBusy ? "Ejecución pendiente" : "Actualizar datos ahora"}</button>
         </div>
       </header>
@@ -529,17 +525,7 @@ export default function Dashboard() {
           </> : priceTab === "damasco" ? <DamascoCatalog/> : <CompetitorComparison/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage future">Próximos competidores</span></div></section>
         </main>
-      ) : (
-        <main className="operations-shell">
-          <section className="operations-top"><div><div className={`service-status ${latestJob?.status === "failed" ? "failed" : ""}`}>{requestWaiting ? "Solicitud esperando al equipo local" : requestPreparing ? "Preparando el scraper" : latestJob?.status === "running" ? "Scraping en ejecución" : latestJob?.status === "failed" ? "Última ejecución fallida" : "Servicio operativo"}</div><h1>Monitoreo técnico</h1><p>Seguimiento del proceso de extracción, persistencia y alertas.</p></div><button className="primary-button operations-run" onClick={triggerScrape} disabled={executionBusy}>▶ {executionBusy ? "Ejecución pendiente" : "Iniciar ejecución manual"}</button></section>
-          {(requestWaiting || requestPreparing) && <section className="live-progress queue-progress"><div><strong>{requestWaiting ? "Solicitud enviada" : "Solicitud recibida"}</strong><span>{requestWaiting ? "Esperando al receptor local" : "Preparando navegador y conexión"}</span></div><progress/><small>{requestWaiting ? `Solicitud #${latestRequest?.id} registrada ${formatDate(latestRequest?.requestedAt)} · puede tardar hasta dos minutos en comenzar.` : "El equipo local tomó la solicitud. El progreso aparecerá en unos segundos."}</small></section>}
-          {latestJob?.status === "running" && <section className="live-progress"><div><strong>Ejecución en curso</strong><span>{progressPercent}% estimado · actualización automática cada 10 segundos</span></div><progress value={progressPercent} max="100"/><small>{latestJob.productsSaved > 0 ? `Guardando histórico: ${integer.format(latestJob.productsSaved)} de ${integer.format(expectedProducts)} productos` : `Extrayendo catálogo: ${latestJob.pagesScanned} de aproximadamente ${expectedPages} páginas · ${integer.format(latestJob.productsFound)} productos encontrados`}</small></section>}
-          <section className="operations-metrics"><article><span>Productos extraídos</span><strong>{latestJob?.productsFound ?? 0}</strong><em>{latestJob?.status === "success" ? "✓ Proceso completado" : latestJob?.status ?? "Sin ejecuciones"}</em></article><article><span>Guardados con SAP</span><strong>{latestJob?.productsSaved ?? 0}</strong><em>Histórico persistido</em></article><article><span>Sin código SAP</span><strong>{latestJob?.productsWithoutSku ?? 0}</strong><em className="warning">Requiere revisión</em></article><article><span>Páginas</span><strong>{latestJob?.pagesScanned ?? 0}</strong><em>Procesadas</em></article><article><span>Duración</span><strong>{formatDuration(latestJob?.durationSeconds)}</strong><em>{latestJob?.status === "running" ? "Tiempo transcurrido" : "Última ejecución"}</em></article></section>
-          <section className="operations-grid"><article className="operations-panel"><div className="operations-head"><h2>Estado de la última ejecución</h2><small>{latestJob ? `Job #${latestJob.id.slice(0, 13)}` : "Sin ejecuciones"}</small></div><div className="pipeline"><div className={`step ${latestJob?.status === "running" && latestJob.pagesScanned === 0 ? "active" : ""}`}><i>{latestJob ? "✓" : "…"}</i><div><span>Inicialización</span><small>Conexión, job y navegador</small></div></div><div className={`step ${latestJob?.status === "running" && latestJob.productsSaved === 0 ? "active" : latestJob?.status !== "success" ? "pending" : ""}`}><i>{latestJob?.status === "success" || (latestJob?.productsSaved ?? 0) > 0 ? "✓" : "…"}</i><div><span>Extracción del catálogo</span><small>{latestJob?.pagesScanned ?? 0} páginas procesadas</small></div></div><div className={`step ${latestJob?.status === "running" && latestJob.productsFound > 0 && latestJob.productsSaved === 0 ? "active" : latestJob?.status !== "success" ? "pending" : ""}`}><i>{latestJob?.status === "success" || (latestJob?.productsSaved ?? 0) > 0 ? "✓" : "…"}</i><div><span>Normalización y validación</span><small>Precios USD y códigos SAP</small></div></div><div className={`step ${latestJob?.status === "running" && latestJob.productsSaved > 0 ? "active" : latestJob?.status !== "success" ? "pending" : ""}`}><i>{latestJob?.status === "success" ? "✓" : "…"}</i><div><span>Persistencia y alertas</span><small>{latestJob?.productsSaved ?? 0} productos guardados</small></div></div></div></article>
-          <article className="operations-panel"><div className="operations-head"><h2>Registro de actividad</h2><small>Hora Venezuela</small></div><div className="terminal">{latestJob?.logs?.length ? latestJob.logs.map((log, index) => <div key={`${log.time}-${index}`}><span className={log.level}>{log.time}</span> {log.message}</div>) : <div><span className="info">[SISTEMA]</span> Esperando la primera ejecución…</div>}{latestJob?.errorMessage && <div><span className="error">[ERROR]</span> {latestJob.errorMessage}</div>}</div></article></section>
-          <section className="operations-lower"><article className="operations-panel"><div className="operations-head"><h2>Historial de ejecuciones</h2><small>Últimos 20 procesos</small></div><div className="table-scroll"><table className="operations-table"><thead><tr><th>Job</th><th>Inicio exacto</th><th>Origen</th><th>Productos</th><th>Duración</th><th>Resultado</th></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td>{job.id.slice(0, 13)}</td><td>{formatDate(job.startedAt)}</td><td>{job.triggerType}</td><td>{job.productsSaved}</td><td>{formatDuration(job.durationSeconds)}</td><td><span className={`job-badge ${job.status}`}>{job.status.toUpperCase()}</span></td></tr>)}</tbody></table></div></article><article className="operations-panel"><div className="operations-head"><h2>Configuración activa</h2><small>Fase 1</small></div><div className="operations-config"><div><span>Fuente</span><b>Tiendas Daka</b></div><div><span>Frecuencia</span><b>Todos los días</b></div><div><span>Hora</span><b>09:00 AM VET</b></div><div><span>Alerta mínima</span><b>±5%</b></div><div><span>Canales</span><b>Correo · Telegram</b></div></div></article></section>
-        </main>
-      )}
+      ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} onTriggerDaka={triggerScrape}/>}
     </div>
   );
 }

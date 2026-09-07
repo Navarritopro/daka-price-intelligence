@@ -35,6 +35,8 @@ export type DashboardData = {
 
 export type JobSummary = {
   id: string;
+  source: "daka" | "damasco";
+  sourceName: string;
   triggerType: string;
   status: string;
   startedAt: string;
@@ -46,4 +48,22 @@ export type JobSummary = {
   durationSeconds: number | null;
   errorMessage: string | null;
   logs: Array<{ time: string; level: string; message: string }>;
+};
+
+export type MonitoringSourceSummary = {
+  source: "daka" | "damasco";
+  sourceName: string;
+  baseUrl: string;
+  currentProducts: number;
+  productsWithPrice: number;
+  inStock: number;
+  outOfStock: number;
+  autoMatches: number;
+  confirmedMatches: number;
+  reviewMatches: number;
+};
+
+export type JobsResponse = {
+  items: JobSummary[];
+  sources: MonitoringSourceSummary[];
 };

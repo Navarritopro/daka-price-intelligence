@@ -169,8 +169,24 @@ def main() -> int:
     saved = 0
     try:
         products = scraper.run()
+        database.update_job_progress(
+            job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
+            logs=scraper.logs,
+        )
         scraper.log("Guardando catálogo e histórico de Damasco en Neon")
-        saved = database.save_products(job_id, products)
+        saved = database.save_products(
+            job_id,
+            products,
+            progress_callback=lambda saved_count: database.update_job_progress(
+                job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
+                products_saved=saved_count, logs=scraper.logs,
+            ),
+        )
+        scraper.log("Actualizando homologación competitiva con DAKA")
+        database.update_job_progress(
+            job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
+            products_saved=saved, logs=scraper.logs,
+        )
         matching = refresh_damasco_matches(database_url)
         scraper.log(
             f"Homologación actualizada: {matching['automatic']} coincidencias automáticas · "
