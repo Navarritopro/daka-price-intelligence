@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from matching import attribute_signature, infer_brand, model_tokens, normalize, product_type, similarity
+from matching import attribute_signature, canonical_model, infer_brand, model_tokens, normalize, product_type, similarity
 
 
 class CompetitorMatchingTests(unittest.TestCase):
@@ -54,6 +54,33 @@ class CompetitorMatchingTests(unittest.TestCase):
         self.assertLess(score, 0.90)
         self.assertEqual(method, "brand_type_attributes")
         self.assertIn("21:kg", evidence["sharedAttributes"])
+
+    def test_model_separators_are_normalized(self):
+        self.assertEqual(canonical_model("RT29K500-JS8"), "RT29K500JS8")
+        score, _, evidence = similarity(
+            {"name": "Nevera Samsung RT29K500-JS8 300 litros"},
+            {"name": "Refrigerador Samsung RT29K500JS8 300L"},
+        )
+        self.assertGreaterEqual(score, 0.93)
+        self.assertIn("RT29K500JS8", evidence["sharedModels"])
+
+    def test_different_sizes_are_rejected(self):
+        score, method, evidence = similarity(
+            {"name": "Televisor Samsung Smart TV 55 pulgadas"},
+            {"name": "Televisor Samsung Smart TV 65 pulgadas"},
+        )
+        self.assertEqual(score, 0)
+        self.assertEqual(method, "attribute_conflict")
+        self.assertTrue(evidence["conflicts"])
+
+    def test_type_and_attribute_without_brand_can_be_reviewed(self):
+        score, method, evidence = similarity(
+            {"name": "Aire acondicionado inverter 12000 BTU blanco"},
+            {"name": "Split 12.000 BTU Inverter con control remoto"},
+        )
+        self.assertGreaterEqual(score, 0.66)
+        self.assertEqual(method, "type_attributes")
+        self.assertTrue(evidence["warnings"])
 
 
 if __name__ == "__main__":

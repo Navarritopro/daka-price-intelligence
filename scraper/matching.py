@@ -3,52 +3,73 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections import defaultdict
 from difflib import SequenceMatcher
 
 
+MATCH_ENGINE_VERSION = "2.0"
+AUTO_THRESHOLD = 0.93
+REVIEW_THRESHOLD = 0.66
+MAX_REVIEW_CANDIDATES = 5
+
 BRAND_ALIASES = {
     "black and decker": "black decker", "black decker": "black decker",
+    "black+decker": "black decker", "b d": "black decker",
     "da co": "damasco", "daco": "damasco", "damasco home": "damasco",
     "damascohome": "damasco", "damasco technology": "damasco",
-    "xiaomi redmi": "xiaomi",
+    "general electric": "ge", "ge appliances": "ge",
+    "hewlett packard": "hp", "hp inc": "hp", "xiaomi redmi": "xiaomi",
+    "mabe internacional": "mabe", "american star": "americanstar",
 }
-KNOWN_BRANDS = (
-    "black and decker", "hewlett packard", "damasco technology", "xiaomi redmi",
-    "hamilton beach", "samsung", "whirlpool", "frigidaire", "indurama",
-    "brentwood", "remington", "motorola", "infinix", "philips", "hisense",
-    "damasco", "galanz", "oster", "midea", "royal", "ninja", "sharp",
-    "sony", "apple", "xiaomi", "honor", "tecno", "realme", "vidvie",
-    "milexus", "ecasa", "huawei", "lenovo", "daewoo", "lg", "jbl",
-    "rca", "acer", "asus", "epson",
-)
+KNOWN_BRANDS = tuple(sorted({
+    "black and decker", "black decker", "hewlett packard", "damasco technology",
+    "xiaomi redmi", "hamilton beach", "general electric", "ge appliances",
+    "american star", "samsung", "whirlpool", "frigidaire", "indurama", "brentwood",
+    "remington", "motorola", "infinix", "philips", "hisense", "damasco", "galanz",
+    "oster", "midea", "royal", "ninja", "sharp", "sony", "apple", "xiaomi", "honor",
+    "tecno", "realme", "vidvie", "milexus", "ecasa", "huawei", "lenovo", "daewoo",
+    "mabe", "electrolux", "bosch", "panasonic", "tcl", "siragon", "cyberlux",
+    "premier", "mastertech", "condesa", "atlas", "westinghouse", "klip xtreme",
+    "logitech", "canon", "nikon", "kitchenaid", "cuisinart", "holstein", "taurus",
+    "imusa", "umco", "arno", "gama", "babyliss", "rowenta", "dyson", "ge",
+    "hp", "lg", "jbl", "rca", "acer", "asus", "epson",
+}, key=len, reverse=True))
+
 GENERIC_MODEL = re.compile(
-    r"^(?:\d+(?:\.\d+)?(?:V|W|HZ|BTU|KG|L|LTS|PULG|GB|TB|CM|MM|OZ|PIES)|\d+K|\d+X\d+)$",
+    r"^(?:\d+(?:[.]\d+)?(?:V|W|HZ|BTU|KG|LB|L|LTS|PULG|IN|GB|TB|CM|MM|OZ|PIES)|"
+    r"\d+K|\d+X\d+|(?:FULL)?HD|UHD|QLED|OLED|SMART|WIFI|INVERTER)$",
     re.IGNORECASE,
 )
 MODEL_TOKEN = re.compile(
-    r"(?=[A-Z0-9/-]{4,})(?=[A-Z0-9/-]*[A-Z])(?=[A-Z0-9/-]*\d)"
-    r"[A-Z0-9]+(?:[-/][A-Z0-9]+)*"
+    r"(?=[A-Z0-9./-]{4,})(?=[A-Z0-9./-]*[A-Z])(?=[A-Z0-9./-]*\d)"
+    r"[A-Z0-9]+(?:[./-][A-Z0-9]+)*"
 )
 PRODUCT_TYPES = {
-    "nevera": r"\b(nevera|refrigerador|refrigeradora)\b",
-    "lavadora": r"\b(lavadora|lavarropas)\b", "secadora": r"\bsecadora\b",
-    "microondas": r"\bmicroonda[s]?\b",
-    "aire_acondicionado": r"\b(aire acondicionado|a a|ac split|aire split)\b",
-    "televisor": r"\b(televisor|smart tv|tv)\b", "licuadora": r"\blicuadora\b",
-    "freidora": r"\bfreidora\b", "cafetera": r"\bcafetera\b",
-    "batidora": r"\bbatidora\b", "cocina": r"\bcocina\b",
-    "congelador": r"\bcongelador\b", "horno": r"\bhorno\b",
-    "plancha_cabello": r"\bplancha\b.*\bcabello\b",
+    "nevera": r"\b(nevera|refrigerador|refrigeradora|frigorifico)\b",
+    "lavadora": r"\b(lavadora|lavarropas|centro de lavado)\b", "secadora": r"\bsecadora\b",
+    "microondas": r"\bmicroonda[s]?\b", "aire_acondicionado": r"\b(aire acondicionado|a a|ac split|aire split|split)\b",
+    "televisor": r"\b(televisor|smart tv|google tv|android tv|tv)\b", "licuadora": r"\blicuadora\b",
+    "freidora": r"\b(freidora|air fryer)\b", "cafetera": r"\bcafetera\b", "batidora": r"\bbatidora\b",
+    "cocina": r"\b(cocina|estufa)\b", "congelador": r"\b(congelador|freezer)\b", "horno": r"\bhorno\b",
+    "plancha_cabello": r"\bplancha\b.*\bcabello\b", "plancha_ropa": r"\bplancha(?: de ropa| a vapor)?\b",
     "afeitadora": r"\b(afeitadora|maquina para afeitar|maquina de afeitar)\b",
-    "corneta": r"\b(corneta|parlante|speaker)\b", "monitor": r"\bmonitor\b",
+    "corneta": r"\b(corneta|parlante|speaker|barra de sonido|soundbar)\b", "monitor": r"\bmonitor\b",
     "aspiradora": r"\baspiradora\b", "lavavajillas": r"\b(lavavajillas|lavaplatos)\b",
-    "vinera": r"\bvinera\b", "tope": r"\btope\b", "campana": r"\bcampana\b",
+    "vinera": r"\bvinera\b", "tope": r"\b(tope|encimera)\b", "campana": r"\bcampana\b",
+    "telefono": r"\b(telefono|smartphone|celular)\b", "tablet": r"\btablet\b",
+    "laptop": r"\b(laptop|notebook|computadora portatil)\b", "impresora": r"\b(impresora|multifuncional)\b",
+    "ventilador": r"\bventilador\b", "calentador": r"\bcalentador\b",
+    "dispensador": r"\bdispensador\b", "extractor": r"\bextractor\b",
 }
-TECHNOLOGIES = {
-    "inverter", "qled", "oled", "uhd", "4k", "8k", "smart", "wifi",
-    "french door", "side by side", "carga frontal", "carga superior",
-    "doble tina", "semiautomatica", "automatica",
+TECHNOLOGY_ALIASES = {
+    "inverter": ("inverter",), "qled": ("qled",), "oled": ("oled",), "uhd": ("uhd", "ultra hd"),
+    "4k": ("4k",), "8k": ("8k",), "smart": ("smart",), "wifi": ("wifi", "wi fi"),
+    "french door": ("french door",), "side by side": ("side by side",),
+    "carga frontal": ("carga frontal",), "carga superior": ("carga superior",),
+    "doble tina": ("doble tina",), "semiautomatica": ("semiautomatica",),
+    "automatica": ("automatica",), "no frost": ("no frost",),
 }
+STOP_WORDS = {"de", "del", "la", "el", "los", "las", "con", "para", "por", "y", "en", "color", "nuevo", "nueva", "oferta", "unidad", "unidades", "marca", "modelo"}
 
 
 def normalize(value: str) -> str:
@@ -64,8 +85,8 @@ def _brand_in_name(name: str) -> str | None:
     if re.search(r"\b(?:da\s*co|daco)\b", normalized):
         return "damasco"
     for brand in KNOWN_BRANDS:
-        if re.search(rf"\b{re.escape(brand)}\b", normalized):
-            return BRAND_ALIASES.get(brand, brand)
+        if re.search(rf"\b{re.escape(normalize(brand))}\b", normalized):
+            return BRAND_ALIASES.get(brand, BRAND_ALIASES.get(normalize(brand), normalize(brand)))
     return None
 
 
@@ -77,83 +98,128 @@ def infer_brand(name: str, explicit: str | None = None) -> str | None:
     return BRAND_ALIASES.get(candidate, candidate) or None
 
 
+def canonical_model(token: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (token or "").upper())
+
+
 def model_tokens(name: str, explicit: str | None = None) -> set[str]:
     source = f"{explicit or ''} {name}".upper().replace("DA+CO", "DAMASCO")
     tokens = set()
     for token in MODEL_TOKEN.findall(source):
-        cleaned = token.strip("-/")
-        if len(cleaned) >= 4 and not GENERIC_MODEL.match(cleaned):
-            tokens.add(cleaned)
+        cleaned = token.strip("-/. ")
+        canonical = canonical_model(cleaned)
+        if len(canonical) >= 4 and not GENERIC_MODEL.match(cleaned) and not GENERIC_MODEL.match(canonical):
+            tokens.add(canonical)
     return tokens
 
 
-def product_type(name: str) -> str | None:
-    normalized = normalize(name)
+def product_type(name: str, category: str | None = None) -> str | None:
+    normalized = normalize(f"{name} {category or ''}")
     for kind, pattern in PRODUCT_TYPES.items():
         if re.search(pattern, normalized):
             return kind
     return None
 
 
+def _attribute_values(name: str) -> dict[str, set[float | str]]:
+    raw = unicodedata.normalize("NFKD", name or "")
+    raw = "".join(char for char in raw if not unicodedata.combining(char))
+    raw = raw.lower().replace(",", ".").replace("³", "3")
+    raw = raw.replace("”", " pulg ").replace("“", " pulg ").replace('"', " pulg ")
+    raw = re.sub(r"[^a-z0-9.]+", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    unit_aliases = {"pulgadas": "pulg", "pulgada": "pulg", "pulg": "pulg", "in": "pulg", "litros": "l", "litro": "l", "lts": "l", "lt": "l", "l": "l", "watts": "w", "watt": "w", "w": "w", "libras": "lb", "libra": "lb", "pies cubicos": "ft3", "pie cubico": "ft3", "cu ft": "ft3", "ft3": "ft3"}
+    values: dict[str, set[float | str]] = defaultdict(set)
+    pattern = r"\b(\d+(?:\.\d+)?)\s*(btu|kg|pulgadas|pulgada|pulg|in|litros|litro|lts|lt|l|watts|watt|w|oz|lb|libras|libra|pies cubicos|pie cubico|cu ft|ft3|gb|tb|hz)\b"
+    for number, raw_unit in re.findall(pattern, raw):
+        # Spanish catalog names often use a dot as a thousands separator (12.000 BTU).
+        parsed_number = float(number.replace(".", "")) if re.fullmatch(r"\d+\.\d{3}", number) else float(number)
+        values[unit_aliases.get(raw_unit, raw_unit)].add(parsed_number)
+    for technology, aliases in TECHNOLOGY_ALIASES.items():
+        if any(re.search(rf"\b{re.escape(alias)}\b", raw) for alias in aliases):
+            values["technology"].add(technology)
+    return values
+
+
 def attribute_signature(name: str) -> set[str]:
-    normalized = unicodedata.normalize("NFKD", name or "")
-    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
-    normalized = normalized.lower().replace(",", ".")
-    normalized = re.sub(r"[^a-z0-9.]+", " ", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    normalized = normalized.replace("pulgadas", "pulg").replace("pulgada", "pulg")
-    normalized = normalized.replace("litros", "l").replace("litro", "l")
-    attributes = {
-        f"{number}:{unit}"
-        for number, unit in re.findall(
-            r"\b(\d+(?:\.\d+)?)\s*(btu|kg|pulg|l|w|oz|pies|gb|tb|hz)\b", normalized
-        )
-    }
-    for technology in TECHNOLOGIES:
-        if technology in normalized:
-            attributes.add(f"tech:{technology}")
+    attributes = set()
+    for unit, values in _attribute_values(name).items():
+        for value in values:
+            if unit == "technology":
+                attributes.add(f"tech:{value}")
+            else:
+                rendered = str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
+                attributes.add(f"{rendered}:{unit}")
     return attributes
+
+
+def _numeric_conflicts(left: dict[str, set[float | str]], right: dict[str, set[float | str]]) -> list[str]:
+    conflicts = []
+    for unit in sorted((set(left) & set(right)) - {"technology"}):
+        left_numbers = {float(value) for value in left[unit]}
+        right_numbers = {float(value) for value in right[unit]}
+        if not any(abs(a - b) <= max(0.1, max(a, b) * 0.02) for a in left_numbers for b in right_numbers):
+            conflicts.append(f"{unit}: {sorted(left_numbers)} vs {sorted(right_numbers)}")
+    return conflicts
+
+
+def _meaningful_words(value: str) -> set[str]:
+    return {word for word in normalize(value).split() if len(word) > 2 and word not in STOP_WORDS}
 
 
 def similarity(left: dict, right: dict) -> tuple[float, str, dict]:
     left_name, right_name = normalize(left["name"]), normalize(right["name"])
-    left_brand = infer_brand(left["name"], left.get("brand"))
-    right_brand = infer_brand(right["name"], right.get("brand"))
-    left_type, right_type = product_type(left["name"]), product_type(right["name"])
+    left_brand = infer_brand(left["name"], left.get("brand")); right_brand = infer_brand(right["name"], right.get("brand"))
+    left_type = product_type(left["name"], left.get("category")); right_type = product_type(right["name"], right.get("category"))
+    evidence = {"engineVersion": MATCH_ENGINE_VERSION, "warnings": [], "conflicts": []}
     if left_brand and right_brand and left_brand != right_brand:
-        return 0.0, "brand_conflict", {}
+        evidence["conflicts"] = [f"Marca: {left_brand} vs {right_brand}"]
+        return 0.0, "brand_conflict", evidence
     if left_type and right_type and left_type != right_type:
-        return 0.0, "type_conflict", {}
+        evidence["conflicts"] = [f"Tipo: {left_type} vs {right_type}"]
+        return 0.0, "type_conflict", evidence
 
     shared_models = sorted(model_tokens(left["name"], left.get("model")) & model_tokens(right["name"], right.get("model")))
+    left_attributes, right_attributes = _attribute_values(left["name"]), _attribute_values(right["name"])
     shared_attributes = sorted(attribute_signature(left["name"]) & attribute_signature(right["name"]))
-    left_words, right_words = set(left_name.split()), set(right_name.split())
+    numeric_conflicts = _numeric_conflicts(left_attributes, right_attributes)
+    left_words, right_words = _meaningful_words(left_name), _meaningful_words(right_name)
     union = left_words | right_words
     token_score = len(left_words & right_words) / len(union) if union else 0.0
     sequence_score = SequenceMatcher(None, left_name, right_name).ratio()
+    name_score = max(token_score, sequence_score)
     brand_equal = bool(left_brand and right_brand and left_brand == right_brand)
     type_equal = bool(left_type and right_type and left_type == right_type)
 
-    if shared_models and (not left_brand or not right_brand or brand_equal):
-        score = min(0.99, 0.91 + (0.04 if brand_equal else 0) + (0.04 * max(token_score, sequence_score)))
+    if shared_models:
+        score = 0.94 + (0.025 if brand_equal else 0) + (0.015 if type_equal else 0)
+        if numeric_conflicts:
+            evidence["warnings"].append("El modelo coincide, pero hay especificaciones numéricas distintas")
+            score -= 0.03
         method = "model_brand" if brand_equal else "model"
-    elif brand_equal and type_equal:
+    else:
+        if numeric_conflicts:
+            evidence["conflicts"] = numeric_conflicts
+            return 0.0, "attribute_conflict", evidence
         numeric_shared = [value for value in shared_attributes if not value.startswith("tech:")]
         technology_shared = [value for value in shared_attributes if value.startswith("tech:")]
-        score = 0.60 + min(0.18, 0.12 * len(numeric_shared))
-        score += min(0.06, 0.03 * len(technology_shared))
-        score += 0.10 * token_score + 0.08 * sequence_score
-        if not shared_attributes and max(token_score, sequence_score) < 0.70:
-            return 0.0, "insufficient", {}
-        score, method = min(0.89, score), "brand_type_attributes"
-    else:
-        return 0.0, "insufficient", {}
+        if brand_equal and type_equal:
+            score = 0.55 + min(0.20, 0.10 * len(numeric_shared)) + min(0.08, 0.025 * len(technology_shared)) + 0.12 * token_score + 0.10 * sequence_score
+            method = "brand_type_attributes"
+        elif type_equal and numeric_shared and (name_score >= 0.35 or technology_shared):
+            score = 0.48 + min(0.18, 0.10 * len(numeric_shared)) + min(0.08, 0.04 * len(technology_shared)) + 0.18 * name_score
+            method = "type_attributes"; evidence["warnings"].append("La marca no está disponible en ambos catálogos")
+        elif brand_equal and (numeric_shared or name_score >= 0.62):
+            score = 0.50 + min(0.16, 0.10 * len(numeric_shared)) + 0.18 * name_score
+            method = "brand_attributes"; evidence["warnings"].append("El tipo de producto no pudo confirmarse en ambos catálogos")
+        else:
+            return 0.0, "insufficient", evidence
+        if score < REVIEW_THRESHOLD:
+            return 0.0, "insufficient", evidence
+        score = min(0.89, score)
 
-    return round(score, 4), method, {
-        "brand": left_brand or right_brand, "productType": left_type or right_type,
-        "sharedModels": shared_models, "sharedAttributes": shared_attributes,
-        "tokenSimilarity": round(token_score, 4), "nameSimilarity": round(sequence_score, 4),
-    }
+    evidence.update({"brand": left_brand or right_brand, "productType": left_type or right_type, "sharedModels": shared_models, "sharedAttributes": shared_attributes, "tokenSimilarity": round(token_score, 4), "nameSimilarity": round(sequence_score, 4), "conflicts": numeric_conflicts})
+    return round(min(0.99, score), 4), method, evidence
 
 
 def refresh_damasco_matches(database_url: str) -> dict[str, int]:
@@ -161,88 +227,62 @@ def refresh_damasco_matches(database_url: str) -> dict[str, int]:
     from psycopg.rows import dict_row
 
     with psycopg.connect(database_url, row_factory=dict_row) as conn:
-        daka = [dict(row) for row in conn.execute("""
-            SELECT p.id, p.name, p.brand, p.model FROM products p
-            JOIN sources s ON s.id = p.source_id WHERE s.slug = 'daka'
-        """).fetchall()]
-        damasco = [dict(row) for row in conn.execute("""
-            SELECT p.id, p.name, p.brand, p.model FROM products p
-            JOIN sources s ON s.id = p.source_id WHERE s.slug = 'damasco'
-        """).fetchall()]
-        protected = conn.execute("""
-            SELECT pm.daka_product_id, pm.competitor_product_id, pm.status
-            FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
-            JOIN sources s ON s.id = c.source_id
-            WHERE s.slug = 'damasco' AND pm.status IN ('confirmed', 'rejected')
-        """).fetchall()
+        daka = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = 'daka'""").fetchall()]
+        damasco = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = 'damasco'""").fetchall()]
+        protected = conn.execute("""SELECT pm.daka_product_id, pm.competitor_product_id, pm.status FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id JOIN sources s ON s.id = c.source_id WHERE s.slug = 'damasco' AND pm.status IN ('confirmed', 'rejected')""").fetchall()
         confirmed_daka = {row["daka_product_id"] for row in protected if row["status"] == "confirmed"}
         confirmed_competitors = {row["competitor_product_id"] for row in protected if row["status"] == "confirmed"}
         rejected_pairs = {(row["daka_product_id"], row["competitor_product_id"]) for row in protected if row["status"] == "rejected"}
 
-        by_model: dict[str, list[dict]] = {}
-        by_brand_type: dict[tuple[str, str], list[dict]] = {}
+        by_model, by_brand_type, by_brand, by_type = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
         for product in damasco:
-            for token in model_tokens(product["name"], product.get("model")):
-                by_model.setdefault(token, []).append(product)
-            brand, kind = infer_brand(product["name"], product.get("brand")), product_type(product["name"])
-            if brand and kind:
-                by_brand_type.setdefault((brand, kind), []).append(product)
+            for token in model_tokens(product["name"], product.get("model")): by_model[token].append(product)
+            brand = infer_brand(product["name"], product.get("brand")); kind = product_type(product["name"], product.get("category"))
+            if brand: by_brand[brand].append(product)
+            if kind: by_type[kind].append(product)
+            if brand and kind: by_brand_type[(brand, kind)].append(product)
 
-        automatic, review = [], []
+        automatic, review, products_with_candidates = [], [], 0
         for source in daka:
-            if source["id"] in confirmed_daka:
-                continue
+            if source["id"] in confirmed_daka: continue
             candidates: dict[int, dict] = {}
             for token in model_tokens(source["name"], source.get("model")):
-                for candidate in by_model.get(token, []):
-                    candidates[candidate["id"]] = candidate
-            brand, kind = infer_brand(source["name"], source.get("brand")), product_type(source["name"])
-            if brand and kind:
-                for candidate in by_brand_type.get((brand, kind), []):
-                    candidates[candidate["id"]] = candidate
-
+                for candidate in by_model.get(token, []): candidates[candidate["id"]] = candidate
+            brand = infer_brand(source["name"], source.get("brand")); kind = product_type(source["name"], source.get("category"))
+            groups = []
+            if brand and kind: groups.append(by_brand_type.get((brand, kind), []))
+            if brand: groups.append(by_brand.get(brand, []))
+            if kind: groups.append(by_type.get(kind, []))
+            for group in groups:
+                for candidate in group: candidates[candidate["id"]] = candidate
             scored = []
             for candidate in candidates.values():
-                if candidate["id"] in confirmed_competitors or (source["id"], candidate["id"]) in rejected_pairs:
-                    continue
+                if candidate["id"] in confirmed_competitors or (source["id"], candidate["id"]) in rejected_pairs: continue
                 score, method, evidence = similarity(source, candidate)
-                if score >= 0.72:
-                    scored.append((score, source, candidate, method, evidence))
-            scored.sort(key=lambda row: row[0], reverse=True)
-            exact = [row for row in scored if row[0] >= 0.90]
-            if exact:
-                automatic.append(exact[0])
+                if score >= REVIEW_THRESHOLD: scored.append((score, source, candidate, method, evidence))
+            scored.sort(key=lambda row: (-row[0], row[2]["id"]))
+            if scored: products_with_candidates += 1
+            best, runner_up = (scored[0] if scored else None), (scored[1] if len(scored) > 1 else None)
+            unambiguous = best and (runner_up is None or best[0] - runner_up[0] >= 0.02)
+            if best and best[0] >= AUTO_THRESHOLD and unambiguous and best[3] in {"model", "model_brand"}:
+                best[4]["candidateRank"] = 1; best[4]["candidateCount"] = len(scored); automatic.append(best)
             else:
-                review.extend(scored[:3])
+                for rank, proposal in enumerate(scored[:MAX_REVIEW_CANDIDATES], start=1):
+                    proposal[4]["candidateRank"] = rank; proposal[4]["candidateCount"] = len(scored); review.append(proposal)
 
         automatic.sort(key=lambda row: row[0], reverse=True)
         used_daka, used_competitors, accepted_automatic = set(confirmed_daka), set(confirmed_competitors), []
         for proposal in automatic:
             _, source, candidate, _, _ = proposal
             if source["id"] not in used_daka and candidate["id"] not in used_competitors:
-                used_daka.add(source["id"]); used_competitors.add(candidate["id"])
-                accepted_automatic.append(proposal)
+                used_daka.add(source["id"]); used_competitors.add(candidate["id"]); accepted_automatic.append(proposal)
+            else:
+                proposal[4]["warnings"].append("Existe otra homologación con mayor prioridad"); review.append(proposal)
 
-        conn.execute("""
-            DELETE FROM product_matches pm USING products c, sources s
-            WHERE pm.competitor_product_id = c.id AND c.source_id = s.id
-              AND s.slug = 'damasco' AND pm.status IN ('auto', 'review')
-        """)
+        conn.execute("""DELETE FROM product_matches pm USING products c, sources s WHERE pm.competitor_product_id = c.id AND c.source_id = s.id AND s.slug = 'damasco' AND pm.status IN ('auto', 'review')""")
         saved = []
         for status, proposals in (("auto", accepted_automatic), ("review", review)):
             for score, source, candidate, method, evidence in proposals:
-                conn.execute("""
-                    INSERT INTO product_matches
-                      (daka_product_id, competitor_product_id, status, match_method, confidence, evidence)
-                    VALUES (%s, %s, %s, %s, %s, %s::jsonb)
-                    ON CONFLICT (daka_product_id, competitor_product_id) DO UPDATE SET
-                      status = CASE WHEN product_matches.status IN ('confirmed', 'rejected')
-                        THEN product_matches.status ELSE EXCLUDED.status END,
-                      match_method = EXCLUDED.match_method, confidence = EXCLUDED.confidence,
-                      evidence = EXCLUDED.evidence, updated_at = NOW()
-                """, (source["id"], candidate["id"], status, method, score, json.dumps(evidence)))
+                conn.execute("""INSERT INTO product_matches (daka_product_id, competitor_product_id, status, match_method, confidence, evidence) VALUES (%s, %s, %s, %s, %s, %s::jsonb) ON CONFLICT (daka_product_id, competitor_product_id) DO UPDATE SET status = CASE WHEN product_matches.status IN ('confirmed', 'rejected') THEN product_matches.status ELSE EXCLUDED.status END, match_method = EXCLUDED.match_method, confidence = EXCLUDED.confidence, evidence = EXCLUDED.evidence, updated_at = NOW()""", (source["id"], candidate["id"], status, method, score, json.dumps(evidence)))
                 saved.append(status)
-
-        return {"automatic": saved.count("auto"), "review": saved.count("review"),
-                "confirmed": len(confirmed_daka), "dakaProducts": len(daka),
-                "damascoProducts": len(damasco)}
+        return {"automatic": saved.count("auto"), "review": saved.count("review"), "confirmed": len(confirmed_daka), "rejectedPairs": len(rejected_pairs), "productsWithCandidates": products_with_candidates, "dakaProducts": len(daka), "damascoProducts": len(damasco)}

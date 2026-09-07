@@ -187,12 +187,20 @@ def main() -> int:
             job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
             products_saved=saved, logs=scraper.logs,
         )
-        matching = refresh_damasco_matches(database_url)
-        scraper.log(
-            f"Homologación actualizada: {matching['automatic']} coincidencias automáticas · "
-            f"{matching['review']} pendientes de revisión",
-            "ok",
-        )
+        try:
+            matching = refresh_damasco_matches(database_url)
+            scraper.log(
+                f"Homologación actualizada: {matching['automatic']} automáticas · "
+                f"{matching['review']} candidatos por validar · "
+                f"{matching['confirmed']} confirmadas",
+                "ok",
+            )
+        except Exception as matching_error:
+            scraper.log(
+                f"El catálogo se guardó, pero no se pudo recalcular la homologación: "
+                f"{type(matching_error).__name__}: {matching_error}",
+                "warning",
+            )
         database.finish_job(
             job_id, status="success", products_found=len(products), products_saved=saved,
             products_without_sku=0, pages_scanned=scraper.pages_scanned, logs=scraper.logs,

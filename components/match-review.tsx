@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type ReviewProduct = { id: number; externalId: string; name: string; url: string; price: number | null; inStock: boolean | null; brand?: string | null };
-type Evidence = { brand?: string; productType?: string; sharedModels?: string[]; sharedAttributes?: string[]; tokenSimilarity?: number; nameSimilarity?: number };
+type ReviewProduct = { id: number; externalId: string; name: string; url: string; price: number | null; inStock: boolean | null; brand?: string | null; model?: string | null; category?: string | null };
+type Evidence = { engineVersion?: string; brand?: string; productType?: string; sharedModels?: string[]; sharedAttributes?: string[]; tokenSimilarity?: number; nameSimilarity?: number; warnings?: string[]; conflicts?: string[]; candidateRank?: number; candidateCount?: number };
 type ReviewItem = { matchId: number; confidence: number; matchMethod: string; evidence: Evidence; daka: ReviewProduct; competitor: ReviewProduct };
 type ReviewPage = { items: ReviewItem[]; total: number; hasMore: boolean };
 
@@ -14,6 +14,16 @@ function describeAttribute(value: string) {
   if (value.startsWith("tech:")) return value.slice(5);
   const [number, unit] = value.split(":");
   return `${number} ${unit?.toUpperCase() ?? ""}`.trim();
+}
+
+function methodLabel(method: string) {
+  const labels: Record<string, string> = {
+    model_brand: "Marca y modelo coincidentes", model: "Modelo coincidente",
+    brand_type_attributes: "Marca, tipo y especificaciones",
+    type_attributes: "Tipo y especificaciones",
+    brand_attributes: "Marca y características del nombre"
+  };
+  return labels[method] ?? "Similitud del catálogo";
 }
 
 export default function MatchReview({ onBack, onDecision }: { onBack: () => void; onDecision: () => void }) {
@@ -84,9 +94,11 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
     <div className="review-toolbar"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP o referencia"/><span>{loading ? "Consultando…" : `${integer.format(total)} candidatos pendientes`}</span></div>
     {message && <div className="review-message" role="status">{message}</div>}
     {loading ? <div className="empty-state">Cargando candidatos de homologación…</div> : items.length === 0 ? <div className="empty-state">No existen candidatos pendientes con esta búsqueda.</div> : <div className="review-list">{items.map((item) => <article className="review-card" key={item.matchId}>
-      <div className="review-confidence"><strong>{(item.confidence * 100).toFixed(0)}%</strong><span>confianza estimada</span></div>
-      <div className="review-products"><div><span className="store-label daka-store">DAKA</span><h3>{item.daka.name}</h3><p>SAP {item.daka.externalId}</p><strong>{item.daka.price == null ? "Sin precio" : money.format(item.daka.price)}</strong><a href={item.daka.url} target="_blank" rel="noreferrer">Abrir ficha DAKA ↗</a></div><div><span className="store-label damasco-store">Damasco</span><h3>{item.competitor.name}</h3><p>Ref. {item.competitor.externalId}</p><strong>{item.competitor.price == null ? "Sin precio" : money.format(item.competitor.price)}</strong><a href={item.competitor.url} target="_blank" rel="noreferrer">Abrir ficha Damasco ↗</a></div></div>
+      <div className="review-confidence"><strong>{(item.confidence * 100).toFixed(0)}%</strong><span>confianza estimada</span>{item.evidence.candidateRank && <small>Opción {item.evidence.candidateRank} de {item.evidence.candidateCount ?? 1}</small>}</div>
+      <div className="review-products"><div><span className="store-label daka-store">DAKA</span><h3>{item.daka.name}</h3><p>SAP {item.daka.externalId}</p><div className="review-product-data">{item.daka.brand && <span>Marca: {item.daka.brand}</span>}{item.daka.model && <span>Modelo: {item.daka.model}</span>}{item.daka.category && <span>{item.daka.category}</span>}</div><strong>{item.daka.price == null ? "Sin precio" : money.format(item.daka.price)}</strong><a href={item.daka.url} target="_blank" rel="noreferrer">Abrir ficha DAKA ↗</a></div><div><span className="store-label damasco-store">Damasco</span><h3>{item.competitor.name}</h3><p>Ref. {item.competitor.externalId}</p><div className="review-product-data">{item.competitor.brand && <span>Marca: {item.competitor.brand}</span>}{item.competitor.model && <span>Modelo: {item.competitor.model}</span>}{item.competitor.category && <span>{item.competitor.category}</span>}</div><strong>{item.competitor.price == null ? "Sin precio" : money.format(item.competitor.price)}</strong><a href={item.competitor.url} target="_blank" rel="noreferrer">Abrir ficha Damasco ↗</a></div></div>
       <div className="review-evidence"><span>Coincidencias detectadas</span><div>{item.evidence.brand && <b>Marca: {item.evidence.brand}</b>}{item.evidence.productType && <b>Tipo: {item.evidence.productType.replaceAll("_", " ")}</b>}{item.evidence.sharedModels?.map((value) => <b key={value}>Modelo: {value}</b>)}{item.evidence.sharedAttributes?.map((value) => <b key={value}>{describeAttribute(value)}</b>)}</div></div>
+      <div className="review-method"><b>{methodLabel(item.matchMethod)}</b>{item.evidence.engineVersion && <span>Motor V{item.evidence.engineVersion}</span>}</div>
+      {!!item.evidence.warnings?.length && <div className="review-warnings"><strong>Revisión necesaria</strong>{item.evidence.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}
       <div className="review-actions"><button className="reject-button" disabled={processing !== null} onClick={() => void decide(item, "reject")}>No son equivalentes</button><button className="confirm-button" disabled={processing !== null} onClick={() => void decide(item, "confirm")}>{processing === item.matchId ? "Guardando…" : "Confirmar equivalencia"}</button></div>
     </article>)}</div>}
     {hasMore && <div className="changes-load-more"><button onClick={() => void load(items.length)}>Cargar 25 candidatos más</button></div>}

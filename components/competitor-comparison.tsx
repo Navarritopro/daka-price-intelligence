@@ -66,6 +66,16 @@ function positionLabel(item: Comparison) {
   return "Mismo precio";
 }
 
+function matchMethodLabel(method: string) {
+  const labels: Record<string, string> = {
+    model_brand: "marca y modelo coincidentes", model: "modelo coincidente",
+    brand_type_attributes: "marca, tipo y especificaciones validadas",
+    type_attributes: "tipo y especificaciones confirmadas manualmente",
+    brand_attributes: "marca y características confirmadas manualmente"
+  };
+  return labels[method] ?? "equivalencia confirmada";
+}
+
 export default function CompetitorComparison() {
   const [mode, setMode] = useState<"comparison" | "review">("comparison");
   const [refreshToken, setRefreshToken] = useState(0);
@@ -193,7 +203,7 @@ export default function CompetitorComparison() {
       </article>
 
       <article className="comparison-detail-card">
-        {selected ? <><div className="comparison-detail-head"><span className="eyebrow-dark">Equivalencia detectada</span><h2>{selected.daka.name}</h2><p>Confianza {(selected.confidence * 100).toFixed(0)}% · {selected.matchMethod === "model_brand" ? "marca y modelo coincidentes" : "modelo coincidente"}</p></div>
+        {selected ? <><div className="comparison-detail-head"><span className="eyebrow-dark">Equivalencia detectada</span><h2>{selected.daka.name}</h2><p>Confianza {(selected.confidence * 100).toFixed(0)}% · {matchMethodLabel(selected.matchMethod)}</p></div>
           <div className="store-comparison"><div><span className="store-label daka-store">DAKA</span><strong>{money.format(selected.daka.price)}</strong><small>SAP {selected.daka.externalId}</small><small>{selected.daka.inStock === false ? "Sin stock en última captura" : "Disponible en última captura"}</small><a href={selected.daka.url} target="_blank" rel="noreferrer">Abrir producto DAKA ↗</a></div><div><span className="store-label damasco-store">Damasco</span><strong>{money.format(selected.competitor.price)}</strong>{selected.competitor.listPrice != null && selected.competitor.listPrice > selected.competitor.price && <small>Precio anterior {money.format(selected.competitor.listPrice)}</small>}<small>Ref. {selected.competitor.externalId}</small><small>{selected.competitor.inStock === false ? "No disponible" : selected.competitor.availableQuantity == null ? "Disponible" : `${selected.competitor.availableQuantity} unidades reportadas`}</small><a href={selected.competitor.url} target="_blank" rel="noreferrer">Abrir producto Damasco ↗</a></div></div>
           <div className={`competitive-conclusion ${selected.differenceUsd <= 0 ? "favorable" : "unfavorable"}`}><span>Lectura competitiva</span><strong>{positionLabel(selected)}</strong><p>{selected.differenceUsd === 0 ? "Ambas tiendas presentan el mismo precio." : `La brecha es de ${money.format(Math.abs(selected.differenceUsd))} (${Math.abs(selected.differencePct).toFixed(1)}%) respecto al precio de Damasco.`}</p></div>
           <div className="comparison-meta"><div><span>Captura DAKA</span><b>{formatDate(selected.daka.scrapedAt)}</b></div><div><span>Captura Damasco</span><b>{formatDate(selected.competitor.scrapedAt)}</b></div></div></> : <div className="empty-state detail-empty">Selecciona una comparación para revisar la equivalencia.</div>}

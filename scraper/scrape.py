@@ -13,6 +13,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from database import Database
+from matching import infer_brand, model_tokens, refresh_damasco_matches
 from notifications import build_messages, send_email, send_telegram
 from utils import extract_sap, parse_price
 
@@ -30,6 +31,8 @@ class Product:
     scraped_at: datetime
     category: str | None = None
     in_stock: bool | None = None
+    brand: str | None = None
+    model: str | None = None
 
 
 class DakaScraper:
@@ -161,6 +164,7 @@ class DakaScraper:
                     image_url = urljoin(BASE_URL, raw["image"]) if raw.get("image") else None
                     sap = extract_sap(image_url, product_url)
                     dedupe_key = sap or product_url
+                    detected_models = sorted(model_tokens(raw["name"]), key=len, reverse=True)
                     unique[dedupe_key] = Product(
                         external_id=sap,
                         name=raw["name"],
@@ -169,6 +173,8 @@ class DakaScraper:
                         image_url=image_url,
                         scraped_at=page_captured_at,
                         in_stock=raw.get("inStock"),
+                        brand=infer_brand(raw["name"]),
+                        model=detected_models[0] if detected_models else None,
                     )
                 self.log(f"Página {page_number}: {len(raw_products)} productos · {len(unique)} únicos", "ok")
                 if self.progress_callback and (page_number == 1 or page_number % 5 == 0):
@@ -233,6 +239,21 @@ def main() -> int:
                 scraper.log(f"Error en correo: {exc}", "warning")
             database.update_alert_channels([row["id"] for row in alerts], emailed, telegram_sent)
         scraper.log(f"Histórico guardado: {saved} productos; alertas: {len(alerts)}", "ok")
+        try:
+            scraper.log("Actualizando homologación competitiva con Damasco")
+            matching = refresh_damasco_matches(database_url)
+            scraper.log(
+                f"Homologación actualizada: {matching['automatic']} automáticas · "
+                f"{matching['review']} candidatos por validar · "
+                f"{matching['confirmed']} confirmadas",
+                "ok",
+            )
+        except Exception as matching_error:
+            scraper.log(
+                f"El catálogo se guardó, pero no se pudo recalcular la homologación: "
+                f"{type(matching_error).__name__}: {matching_error}",
+                "warning",
+            )
         database.finish_job(
             job_id, status="success", products_found=len(products), products_saved=saved,
             products_without_sku=without_sku, pages_scanned=scraper.pages_scanned,

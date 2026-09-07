@@ -22,9 +22,11 @@ export async function GET(request: NextRequest) {
       )
       SELECT pm.id AS match_id, pm.confidence, pm.match_method, pm.evidence,
         d.id AS daka_id, d.external_id AS daka_sap, d.name AS daka_name,
+        d.brand AS daka_brand, d.model AS daka_model, d.category AS daka_category,
         d.url AS daka_url, dp.price_usd AS daka_price, dp.in_stock AS daka_in_stock,
         c.id AS competitor_id, c.external_id AS competitor_reference,
         c.name AS competitor_name, c.url AS competitor_url, c.brand AS competitor_brand,
+        c.model AS competitor_model, c.category AS competitor_category,
         cp.price_usd AS competitor_price, cp.in_stock AS competitor_in_stock,
         COUNT(*) OVER()::int AS total_count
       FROM product_matches pm
@@ -46,9 +48,11 @@ export async function GET(request: NextRequest) {
       matchMethod: row.match_method, evidence: row.evidence ?? {},
       daka: { id: asNumber(row.daka_id), externalId: row.daka_sap, name: row.daka_name,
         url: row.daka_url, price: row.daka_price == null ? null : asNumber(row.daka_price),
-        inStock: row.daka_in_stock },
+        inStock: row.daka_in_stock, brand: row.daka_brand ?? null,
+        model: row.daka_model ?? null, category: row.daka_category ?? null },
       competitor: { id: asNumber(row.competitor_id), externalId: row.competitor_reference,
         name: row.competitor_name, url: row.competitor_url, brand: row.competitor_brand,
+        model: row.competitor_model ?? null, category: row.competitor_category ?? null,
         price: row.competitor_price == null ? null : asNumber(row.competitor_price),
         inStock: row.competitor_in_stock }
     }));
