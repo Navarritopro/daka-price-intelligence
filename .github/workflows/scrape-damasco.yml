@@ -2,8 +2,8 @@ name: Scraping diario Damasco
 
 on:
   schedule:
-    # 13:30 UTC = 09:30 AM VET. Se ejecuta después del catálogo DAKA.
-    - cron: "30 13 * * *"
+    # 13:07 UTC = 09:07 AM VET. Evita la congestión habitual del inicio de cada hora.
+    - cron: "7 13 * * *"
   workflow_dispatch:
     inputs:
       trigger_type:
