@@ -28,6 +28,7 @@ type Comparison = {
 type ComparisonStats = {
   competitorProducts: number;
   reviewPending: number;
+  reviewAlternatives: number;
   matchedProducts: number;
   dakaLower: number;
   competitorLower: number;
@@ -51,7 +52,7 @@ const vetDate = new Intl.DateTimeFormat("es-VE", {
   hour: "2-digit", minute: "2-digit"
 });
 const EMPTY_STATS: ComparisonStats = {
-  competitorProducts: 0, reviewPending: 0, matchedProducts: 0,
+  competitorProducts: 0, reviewPending: 0, reviewAlternatives: 0, matchedProducts: 0,
   dakaLower: 0, competitorLower: 0, equalPrice: 0,
   averageGapPct: 0, competitorLastScrapeAt: null
 };
@@ -173,7 +174,7 @@ export default function CompetitorComparison() {
       <div className="competitor-overview-actions">
         <div className="competitor-freshness"><span>Última captura Damasco</span><strong>{formatDate(stats.competitorLastScrapeAt)}</strong></div>
         <button className="secondary-button" type="button" onClick={() => setMode("review")}>
-          Revisar {integer.format(stats.reviewPending)} candidatos
+          Revisar {integer.format(stats.reviewPending)} productos
         </button>
       </div>
     </section>
@@ -183,7 +184,7 @@ export default function CompetitorComparison() {
       <article><span>Productos homologados</span><strong>{loading ? "…" : integer.format(stats.matchedProducts)}</strong><small>Comparaciones confiables</small></article>
       <article className="daka-win"><span>DAKA con mejor precio</span><strong>{loading ? "…" : integer.format(stats.dakaLower)}</strong><small>Oportunidades competitivas</small></article>
       <article className="competitor-win"><span>Damasco con mejor precio</span><strong>{loading ? "…" : integer.format(stats.competitorLower)}</strong><small>Brechas por revisar</small></article>
-      <article><span>Por validar</span><strong>{loading ? "…" : integer.format(stats.reviewPending)}</strong><small>No se muestran como equivalentes</small></article>
+      <article><span>Productos por validar</span><strong>{loading ? "…" : integer.format(stats.reviewPending)}</strong><small>{integer.format(stats.reviewAlternatives)} alternativas analizadas</small></article>
     </section>
 
     <section className="filters comparison-filters">

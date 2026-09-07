@@ -83,6 +83,11 @@ function formatDuration(seconds: number | null | undefined) {
   return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+function jobStatusLabel(status: string | null | undefined) {
+  const labels: Record<string, string> = { success: "Exitosa", failed: "Fallida", running: "En ejecución", pending: "Pendiente", queued: "En cola" };
+  return status ? labels[status] ?? status : "Pendiente";
+}
+
 function changeClass(value: number | null) {
   if (value == null || value === 0) return "neutral";
   return value < 0 ? "negative" : "positive";
@@ -485,7 +490,7 @@ export default function Dashboard() {
               <article className="stat-card"><span>Catálogo actual</span><strong>{loading ? "…" : integer.format(summary?.productsMonitored ?? 0)}</strong><em>{integer.format(summary?.productsHistorical ?? 0)} históricos · {integer.format(summary?.productsNotSeen ?? 0)} no vistos</em></article>
               <article className="stat-card accent"><span>Oportunidades de rebaja</span><strong>{loading ? "…" : integer.format(summary?.priceDropsToday ?? 0)}</strong><em>Detectadas hoy</em></article>
               <article className="stat-card"><span>Precio promedio</span><strong>{loading ? "…" : money.format(summary?.averagePrice ?? 0)}</strong><em>{summary?.changesToday ?? 0} cambios ≥ ±5%</em></article>
-              <article className="stat-card"><span>Último scraping</span><strong>{summary?.lastJobStatus === "success" ? "Exitoso" : summary?.lastJobStatus ?? "Pendiente"}</strong><em>{formatDuration(summary?.lastJobDurationSeconds)} · {formatDate(summary?.lastScrapeAt)}</em></article>
+              <article className="stat-card"><span>Última ejecución DAKA</span><strong>{jobStatusLabel(summary?.lastJobStatus)}</strong><em>{formatDuration(summary?.lastJobDurationSeconds)} · {formatDate(summary?.lastJobAt)}</em><small>Última captura exitosa: {formatDate(summary?.lastScrapeAt)}</small></article>
             </div>
           </section>
 

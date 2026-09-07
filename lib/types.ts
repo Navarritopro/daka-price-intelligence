@@ -29,6 +29,7 @@ export type DashboardData = {
   averagePrice: number;
   lastScrapeAt: string | null;
   lastJobStatus: string | null;
+  lastJobAt: string | null;
   lastJobDurationSeconds: number | null;
   nextRun: string;
 };

@@ -7,7 +7,7 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 
 
-MATCH_ENGINE_VERSION = "2.0"
+MATCH_ENGINE_VERSION = "2.1"
 AUTO_THRESHOLD = 0.93
 REVIEW_THRESHOLD = 0.66
 MAX_REVIEW_CANDIDATES = 5
@@ -44,6 +44,7 @@ MODEL_TOKEN = re.compile(
     r"(?=[A-Z0-9./-]{4,})(?=[A-Z0-9./-]*[A-Z])(?=[A-Z0-9./-]*\d)"
     r"[A-Z0-9]+(?:[./-][A-Z0-9]+)*"
 )
+MODEL_FAMILY_TOKEN = re.compile(r"\b[A-Z]{1,3}\d{2,4}[A-Z0-9]*\b")
 PRODUCT_TYPES = {
     "nevera": r"\b(nevera|refrigerador|refrigeradora|frigorifico)\b",
     "lavadora": r"\b(lavadora|lavarropas|centro de lavado)\b", "secadora": r"\bsecadora\b",
@@ -69,7 +70,16 @@ TECHNOLOGY_ALIASES = {
     "doble tina": ("doble tina",), "semiautomatica": ("semiautomatica",),
     "automatica": ("automatica",), "no frost": ("no frost",),
 }
-STOP_WORDS = {"de", "del", "la", "el", "los", "las", "con", "para", "por", "y", "en", "color", "nuevo", "nueva", "oferta", "unidad", "unidades", "marca", "modelo"}
+COLOR_WORDS = {
+    "amarillo", "azul", "beige", "blanco", "blanca", "dorado", "dorada", "gris",
+    "morado", "morada", "naranja", "negro", "negra", "plateado", "plateada",
+    "rojo", "roja", "rosado", "rosada", "verde", "violeta",
+}
+STOP_WORDS = {
+    "de", "del", "la", "el", "los", "las", "con", "para", "por", "y", "en",
+    "color", "nuevo", "nueva", "oferta", "unidad", "unidades", "marca", "modelo",
+    *COLOR_WORDS,
+}
 
 
 def normalize(value: str) -> str:
@@ -110,7 +120,18 @@ def model_tokens(name: str, explicit: str | None = None) -> set[str]:
         canonical = canonical_model(cleaned)
         if len(canonical) >= 4 and not GENERIC_MODEL.match(cleaned) and not GENERIC_MODEL.match(canonical):
             tokens.add(canonical)
+    # Familias comerciales cortas frecuentes en telefonía (A06, S26, G54) no
+    # cumplen el mínimo general de cuatro caracteres, pero son discriminantes
+    # cuando marca y tipo también coinciden.
+    for token in MODEL_FAMILY_TOKEN.findall(source):
+        canonical = canonical_model(token)
+        if not GENERIC_MODEL.match(canonical):
+            tokens.add(canonical)
     return tokens
+
+
+def color_tokens(name: str) -> set[str]:
+    return set(normalize(name).split()) & COLOR_WORDS
 
 
 def product_type(name: str, category: str | None = None) -> str | None:
@@ -171,7 +192,7 @@ def similarity(left: dict, right: dict) -> tuple[float, str, dict]:
     left_name, right_name = normalize(left["name"]), normalize(right["name"])
     left_brand = infer_brand(left["name"], left.get("brand")); right_brand = infer_brand(right["name"], right.get("brand"))
     left_type = product_type(left["name"], left.get("category")); right_type = product_type(right["name"], right.get("category"))
-    evidence = {"engineVersion": MATCH_ENGINE_VERSION, "warnings": [], "conflicts": []}
+    evidence = {"engineVersion": MATCH_ENGINE_VERSION, "warnings": [], "conflicts": [], "variantNotes": []}
     if left_brand and right_brand and left_brand != right_brand:
         evidence["conflicts"] = [f"Marca: {left_brand} vs {right_brand}"]
         return 0.0, "brand_conflict", evidence
@@ -190,6 +211,11 @@ def similarity(left: dict, right: dict) -> tuple[float, str, dict]:
     name_score = max(token_score, sequence_score)
     brand_equal = bool(left_brand and right_brand and left_brand == right_brand)
     type_equal = bool(left_type and right_type and left_type == right_type)
+    left_colors, right_colors = color_tokens(left["name"]), color_tokens(right["name"])
+    if left_colors and right_colors and left_colors.isdisjoint(right_colors):
+        evidence["variantNotes"].append(
+            f"Variante de color: {', '.join(sorted(left_colors))} vs {', '.join(sorted(right_colors))}"
+        )
 
     if shared_models:
         score = 0.94 + (0.025 if brand_equal else 0) + (0.015 if type_equal else 0)
@@ -265,10 +291,16 @@ def refresh_damasco_matches(database_url: str) -> dict[str, int]:
             best, runner_up = (scored[0] if scored else None), (scored[1] if len(scored) > 1 else None)
             unambiguous = best and (runner_up is None or best[0] - runner_up[0] >= 0.02)
             if best and best[0] >= AUTO_THRESHOLD and unambiguous and best[3] in {"model", "model_brand"}:
-                best[4]["candidateRank"] = 1; best[4]["candidateCount"] = len(scored); automatic.append(best)
+                best[4]["candidateRank"] = 1
+                best[4]["candidateCount"] = min(len(scored), MAX_REVIEW_CANDIDATES)
+                best[4]["candidateTotal"] = len(scored)
+                automatic.append(best)
             else:
                 for rank, proposal in enumerate(scored[:MAX_REVIEW_CANDIDATES], start=1):
-                    proposal[4]["candidateRank"] = rank; proposal[4]["candidateCount"] = len(scored); review.append(proposal)
+                    proposal[4]["candidateRank"] = rank
+                    proposal[4]["candidateCount"] = min(len(scored), MAX_REVIEW_CANDIDATES)
+                    proposal[4]["candidateTotal"] = len(scored)
+                    review.append(proposal)
 
         automatic.sort(key=lambda row: row[0], reverse=True)
         used_daka, used_competitors, accepted_automatic = set(confirmed_daka), set(confirmed_competitors), []

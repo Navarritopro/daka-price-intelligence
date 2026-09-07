@@ -109,8 +109,10 @@ export async function GET(request: NextRequest) {
       )
       SELECT
         (SELECT COUNT(*) FROM products WHERE source_id = (SELECT id FROM damasco_source))::int AS competitor_products,
-        (SELECT COUNT(*) FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
+        (SELECT COUNT(DISTINCT pm.daka_product_id) FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
           WHERE c.source_id = (SELECT id FROM damasco_source) AND pm.status = 'review')::int AS review_pending,
+        (SELECT COUNT(*) FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
+          WHERE c.source_id = (SELECT id FROM damasco_source) AND pm.status = 'review')::int AS review_alternatives,
         COUNT(*)::int AS matched_products,
         COUNT(*) FILTER (WHERE daka_price < competitor_price)::int AS daka_lower,
         COUNT(*) FILTER (WHERE daka_price > competitor_price)::int AS competitor_lower,
@@ -161,6 +163,7 @@ export async function GET(request: NextRequest) {
       stats: {
         competitorProducts: asNumber(stats?.competitor_products),
         reviewPending: asNumber(stats?.review_pending),
+        reviewAlternatives: asNumber(stats?.review_alternatives),
         matchedProducts: asNumber(stats?.matched_products),
         dakaLower: asNumber(stats?.daka_lower),
         competitorLower: asNumber(stats?.competitor_lower),

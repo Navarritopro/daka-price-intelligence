@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type ReviewProduct = { id: number; externalId: string; name: string; url: string; price: number | null; inStock: boolean | null; brand?: string | null; model?: string | null; category?: string | null };
-type Evidence = { engineVersion?: string; brand?: string; productType?: string; sharedModels?: string[]; sharedAttributes?: string[]; tokenSimilarity?: number; nameSimilarity?: number; warnings?: string[]; conflicts?: string[]; candidateRank?: number; candidateCount?: number };
-type ReviewItem = { matchId: number; confidence: number; matchMethod: string; evidence: Evidence; daka: ReviewProduct; competitor: ReviewProduct };
-type ReviewPage = { items: ReviewItem[]; total: number; hasMore: boolean };
+type Evidence = { engineVersion?: string; brand?: string; productType?: string; sharedModels?: string[]; sharedAttributes?: string[]; tokenSimilarity?: number; nameSimilarity?: number; warnings?: string[]; conflicts?: string[]; variantNotes?: string[]; candidateRank?: number; candidateCount?: number; candidateTotal?: number };
+type ReviewCandidate = { matchId: number; confidence: number; matchMethod: string; evidence: Evidence; bulkEligible: boolean; competitor: ReviewProduct };
+type ReviewGroup = { daka: ReviewProduct; candidates: ReviewCandidate[] };
+type ReviewPage = { groups: ReviewGroup[]; totalProducts: number; totalAlternatives: number; safeCandidates: number; hasMore: boolean };
 
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
@@ -21,19 +22,33 @@ function methodLabel(method: string) {
     model_brand: "Marca y modelo coincidentes", model: "Modelo coincidente",
     brand_type_attributes: "Marca, tipo y especificaciones",
     type_attributes: "Tipo y especificaciones",
-    brand_attributes: "Marca y características del nombre"
+    brand_attributes: "Marca y características del nombre",
   };
   return labels[method] ?? "Similitud del catálogo";
 }
 
+function ProductData({ product, store }: { product: ReviewProduct; store: "daka" | "damasco" }) {
+  return <div className="review-product-panel">
+    <span className={`store-label ${store === "daka" ? "daka-store" : "damasco-store"}`}>{store === "daka" ? "DAKA" : "Damasco"}</span>
+    <h3>{product.name}</h3>
+    <p>{store === "daka" ? "SAP" : "Ref."} {product.externalId}</p>
+    <div className="review-product-data">{product.brand && <span>Marca: {product.brand}</span>}{product.model && <span>Modelo: {product.model}</span>}{product.category && <span>{product.category}</span>}</div>
+    <strong>{product.price == null ? "Sin precio" : money.format(product.price)}</strong>
+    <a href={product.url} target="_blank" rel="noreferrer">Abrir ficha {store === "daka" ? "DAKA" : "Damasco"} ↗</a>
+  </div>;
+}
+
 export default function MatchReview({ onBack, onDecision }: { onBack: () => void; onDecision: () => void }) {
-  const [items, setItems] = useState<ReviewItem[]>([]);
-  const [total, setTotal] = useState(0);
+  const [groups, setGroups] = useState<ReviewGroup[]>([]);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [totalAlternatives, setTotalAlternatives] = useState(0);
+  const [safeCandidates, setSafeCandidates] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState<number | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
   const adminKey = useRef<string | null>(null);
 
@@ -44,14 +59,17 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
 
   const load = useCallback(async (offset = 0) => {
     setLoading(offset === 0);
-    const params = new URLSearchParams({ search: debouncedSearch, limit: "25", offset: String(offset) });
+    const params = new URLSearchParams({ search: debouncedSearch, limit: "15", offset: String(offset) });
     try {
       const response = await fetch(`/api/matches?${params.toString()}`, { cache: "no-store" });
       const page = await response.json() as ReviewPage & { error?: string };
       if (!response.ok) throw new Error(page.error ?? "No fue posible cargar los candidatos");
-      setItems((current) => offset === 0 ? page.items : [...current, ...page.items.filter((item) => !current.some((known) => known.matchId === item.matchId))]);
-      setTotal(page.total);
+      setGroups((current) => offset === 0 ? page.groups : [...current, ...page.groups.filter((group) => !current.some((known) => known.daka.id === group.daka.id))]);
+      setTotalProducts(page.totalProducts);
+      setTotalAlternatives(page.totalAlternatives);
+      setSafeCandidates(page.safeCandidates);
       setHasMore(page.hasMore);
+      if (offset === 0) setSelected(new Set());
       setMessage(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No fue posible cargar los candidatos");
@@ -62,17 +80,20 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
 
   useEffect(() => { void load(0); }, [load]);
 
-  async function decide(item: ReviewItem, action: "confirm" | "reject") {
-    if (!adminKey.current) {
-      adminKey.current = window.prompt("Ingresa la clave administrativa para guardar decisiones de homologación:");
-    }
-    if (!adminKey.current) return;
-    setProcessing(item.matchId);
+  function getAdminKey() {
+    if (!adminKey.current) adminKey.current = window.prompt("Ingresa la clave administrativa para guardar decisiones de homologación:");
+    return adminKey.current;
+  }
+
+  async function decide(matchId: number, action: "confirm" | "reject") {
+    const key = getAdminKey();
+    if (!key) return;
+    setProcessing(true);
     setMessage(null);
     try {
       const response = await fetch("/api/matches", {
-        method: "POST", headers: { "content-type": "application/json", "x-admin-key": adminKey.current },
-        body: JSON.stringify({ matchId: item.matchId, action })
+        method: "POST", headers: { "content-type": "application/json", "x-admin-key": key },
+        body: JSON.stringify({ matchId, action }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -81,26 +102,81 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
       }
       onDecision();
       await load(0);
-      setMessage(action === "confirm" ? "Equivalencia confirmada. Ya forma parte del comparador." : "Candidato rechazado. No volverá a sugerirse.");
+      setMessage(action === "confirm" ? "Equivalencia confirmada. Ya forma parte del comparador." : "Alternativa descartada. Las demás opciones del producto se conservaron.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No fue posible guardar la decisión");
     } finally {
-      setProcessing(null);
+      setProcessing(false);
+    }
+  }
+
+  function toggle(group: ReviewGroup, candidate: ReviewCandidate) {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const option of group.candidates) next.delete(option.matchId);
+      if (!current.has(candidate.matchId)) next.add(candidate.matchId);
+      return next;
+    });
+  }
+
+  function selectVisibleSafe() {
+    const next = new Set<number>();
+    for (const group of groups) {
+      const safe = group.candidates.find((candidate) => candidate.bulkEligible);
+      if (safe) next.add(safe.matchId);
+    }
+    setSelected(next);
+  }
+
+  async function confirmSelected() {
+    if (!selected.size) return;
+    const key = getAdminKey();
+    if (!key) return;
+    if (!window.confirm(`Confirmar ${selected.size} equivalencias seleccionadas como el mismo producto?`)) return;
+    setProcessing(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/matches", {
+        method: "POST", headers: { "content-type": "application/json", "x-admin-key": key },
+        body: JSON.stringify({ action: "confirm_bulk", matchIds: [...selected] }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        if (response.status === 401) adminKey.current = null;
+        throw new Error(result.error ?? "No fue posible confirmar la selección");
+      }
+      onDecision();
+      await load(0);
+      setMessage(`${result.confirmed} equivalencias confirmadas${result.skipped ? ` · ${result.skipped} omitidas por seguridad o conflicto` : ""}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No fue posible confirmar la selección");
+    } finally {
+      setProcessing(false);
     }
   }
 
   return <section className="review-module">
-    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación</span><h2>Coincidencias por validar</h2><p>Confirma únicamente cuando ambos registros correspondan exactamente al mismo producto.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
-    <div className="review-toolbar"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP o referencia"/><span>{loading ? "Consultando…" : `${integer.format(total)} candidatos pendientes`}</span></div>
+    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación · Motor V2.1</span><h2>Coincidencias agrupadas por producto</h2><p>Revisa un producto DAKA y elige solamente su alternativa equivalente en Damasco.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
+    <div className="review-summary">
+      <div><strong>{integer.format(totalProducts)}</strong><span>productos DAKA por validar</span></div>
+      <div><strong>{integer.format(totalAlternatives)}</strong><span>alternativas analizadas</span></div>
+      <div><strong>{integer.format(safeCandidates)}</strong><span>primeras opciones de alta confianza</span></div>
+    </div>
+    <div className="review-toolbar"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP o referencia"/><div className="review-bulk-actions"><button type="button" onClick={selectVisibleSafe} disabled={processing || loading}>Seleccionar sugerencias visibles</button><button className="confirm-button" type="button" onClick={() => void confirmSelected()} disabled={processing || selected.size === 0}>{processing ? "Procesando…" : `Confirmar seleccionadas (${selected.size})`}</button></div></div>
+    <div className="review-safety-note">La selección rápida solo se habilita para la primera opción con ≥85% de confianza, marca y tipo confirmados, modelo compartido o al menos dos especificaciones coincidentes y sin conflictos.</div>
     {message && <div className="review-message" role="status">{message}</div>}
-    {loading ? <div className="empty-state">Cargando candidatos de homologación…</div> : items.length === 0 ? <div className="empty-state">No existen candidatos pendientes con esta búsqueda.</div> : <div className="review-list">{items.map((item) => <article className="review-card" key={item.matchId}>
-      <div className="review-confidence"><strong>{(item.confidence * 100).toFixed(0)}%</strong><span>confianza estimada</span>{item.evidence.candidateRank && <small>Opción {item.evidence.candidateRank} de {item.evidence.candidateCount ?? 1}</small>}</div>
-      <div className="review-products"><div><span className="store-label daka-store">DAKA</span><h3>{item.daka.name}</h3><p>SAP {item.daka.externalId}</p><div className="review-product-data">{item.daka.brand && <span>Marca: {item.daka.brand}</span>}{item.daka.model && <span>Modelo: {item.daka.model}</span>}{item.daka.category && <span>{item.daka.category}</span>}</div><strong>{item.daka.price == null ? "Sin precio" : money.format(item.daka.price)}</strong><a href={item.daka.url} target="_blank" rel="noreferrer">Abrir ficha DAKA ↗</a></div><div><span className="store-label damasco-store">Damasco</span><h3>{item.competitor.name}</h3><p>Ref. {item.competitor.externalId}</p><div className="review-product-data">{item.competitor.brand && <span>Marca: {item.competitor.brand}</span>}{item.competitor.model && <span>Modelo: {item.competitor.model}</span>}{item.competitor.category && <span>{item.competitor.category}</span>}</div><strong>{item.competitor.price == null ? "Sin precio" : money.format(item.competitor.price)}</strong><a href={item.competitor.url} target="_blank" rel="noreferrer">Abrir ficha Damasco ↗</a></div></div>
-      <div className="review-evidence"><span>Coincidencias detectadas</span><div>{item.evidence.brand && <b>Marca: {item.evidence.brand}</b>}{item.evidence.productType && <b>Tipo: {item.evidence.productType.replaceAll("_", " ")}</b>}{item.evidence.sharedModels?.map((value) => <b key={value}>Modelo: {value}</b>)}{item.evidence.sharedAttributes?.map((value) => <b key={value}>{describeAttribute(value)}</b>)}</div></div>
-      <div className="review-method"><b>{methodLabel(item.matchMethod)}</b>{item.evidence.engineVersion && <span>Motor V{item.evidence.engineVersion}</span>}</div>
-      {!!item.evidence.warnings?.length && <div className="review-warnings"><strong>Revisión necesaria</strong>{item.evidence.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}
-      <div className="review-actions"><button className="reject-button" disabled={processing !== null} onClick={() => void decide(item, "reject")}>No son equivalentes</button><button className="confirm-button" disabled={processing !== null} onClick={() => void decide(item, "confirm")}>{processing === item.matchId ? "Guardando…" : "Confirmar equivalencia"}</button></div>
+    {loading ? <div className="empty-state">Cargando productos pendientes…</div> : groups.length === 0 ? <div className="empty-state">No existen productos pendientes con esta búsqueda.</div> : <div className="review-group-list">{groups.map((group) => <article className="review-group" key={group.daka.id}>
+      <div className="review-group-daka"><div className="review-group-title"><span>Producto base</span><b>{group.candidates.length} alternativa{group.candidates.length === 1 ? "" : "s"} disponible{group.candidates.length === 1 ? "" : "s"}</b></div><ProductData product={group.daka} store="daka"/></div>
+      <div className="review-options">{group.candidates.map((candidate, index) => <div className={`review-option ${selected.has(candidate.matchId) ? "selected" : ""}`} key={candidate.matchId}>
+        <div className="review-option-head"><div><strong>Opción {index + 1}</strong><span>{(candidate.confidence * 100).toFixed(0)}% de confianza</span></div>{candidate.bulkEligible && <label className="safe-selector"><input type="checkbox" checked={selected.has(candidate.matchId)} onChange={() => toggle(group, candidate)}/> Alta confianza</label>}</div>
+        <ProductData product={candidate.competitor} store="damasco"/>
+        <div className="review-evidence"><span>Coincidencias detectadas</span><div>{candidate.evidence.brand && <b>Marca: {candidate.evidence.brand}</b>}{candidate.evidence.productType && <b>Tipo: {candidate.evidence.productType.replaceAll("_", " ")}</b>}{candidate.evidence.sharedModels?.map((value) => <b key={value}>Modelo: {value}</b>)}{candidate.evidence.sharedAttributes?.map((value) => <b key={value}>{describeAttribute(value)}</b>)}</div></div>
+        <div className="review-method"><b>{methodLabel(candidate.matchMethod)}</b>{candidate.evidence.engineVersion && <span>Motor V{candidate.evidence.engineVersion}</span>}</div>
+        {!!candidate.evidence.variantNotes?.length && <div className="review-variant-notes">{candidate.evidence.variantNotes.map((note) => <span key={note}>{note}. El color se informa, pero no invalida el producto base.</span>)}</div>}
+        {!!candidate.evidence.warnings?.length && <div className="review-warnings"><strong>Revisión necesaria</strong>{candidate.evidence.warnings.map((warning) => <span key={warning}>{warning}</span>)}</div>}
+        <div className="review-actions"><button className="reject-button" disabled={processing} onClick={() => void decide(candidate.matchId, "reject")}>Descartar esta opción</button><button className="confirm-button" disabled={processing} onClick={() => void decide(candidate.matchId, "confirm")}>Confirmar equivalencia</button></div>
+      </div>)}</div>
     </article>)}</div>}
-    {hasMore && <div className="changes-load-more"><button onClick={() => void load(items.length)}>Cargar 25 candidatos más</button></div>}
+    {hasMore && <div className="changes-load-more"><button onClick={() => void load(groups.length)}>Cargar 15 productos más</button></div>}
   </section>;
 }

@@ -3,12 +3,61 @@ import { asNumber, getSql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+type Evidence = {
+  brand?: string;
+  productType?: string;
+  sharedModels?: string[];
+  sharedAttributes?: string[];
+  warnings?: string[];
+  conflicts?: string[];
+  candidateRank?: number;
+  candidateCount?: number;
+  candidateTotal?: number;
+};
+
+function isBulkEligible(confidence: number, method: string, evidence: Evidence) {
+  const numericAttributes = (evidence.sharedAttributes ?? []).filter((value) => !value.startsWith("tech:"));
+  const strongIdentity = (evidence.sharedModels?.length ?? 0) > 0 || numericAttributes.length >= 2;
+  return confidence >= 0.85
+    && evidence.candidateRank === 1
+    && Boolean(evidence.brand && evidence.productType)
+    && strongIdentity
+    && (evidence.warnings?.length ?? 0) === 0
+    && (evidence.conflicts?.length ?? 0) === 0
+    && ["model_brand", "brand_type_attributes"].includes(method);
+}
+
+async function confirmOne(sql: ReturnType<typeof getSql>, matchId: number) {
+  return sql`
+    WITH target AS (
+      SELECT pm.id, pm.daka_product_id, pm.competitor_product_id, c.source_id
+      FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
+      WHERE pm.id = ${matchId} AND pm.status = 'review'
+    ), rejected_conflicts AS (
+      UPDATE product_matches other SET status = 'rejected', updated_at = NOW()
+      FROM target
+      WHERE other.id <> target.id AND other.status IN ('auto', 'review')
+        AND (
+          other.competitor_product_id = target.competitor_product_id
+          OR (other.daka_product_id = target.daka_product_id AND EXISTS (
+            SELECT 1 FROM products other_competitor
+            WHERE other_competitor.id = other.competitor_product_id
+              AND other_competitor.source_id = target.source_id
+          ))
+        )
+      RETURNING other.id
+    )
+    UPDATE product_matches pm SET status = 'confirmed', updated_at = NOW()
+    FROM target WHERE pm.id = target.id RETURNING pm.id
+  `;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const searchLike = `%${search}%`;
-    const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 25, 1), 50);
+    const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 15, 1), 25);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
     const rows = await sql`
       WITH latest_daka_job AS (
@@ -27,8 +76,7 @@ export async function GET(request: NextRequest) {
         c.id AS competitor_id, c.external_id AS competitor_reference,
         c.name AS competitor_name, c.url AS competitor_url, c.brand AS competitor_brand,
         c.model AS competitor_model, c.category AS competitor_category,
-        cp.price_usd AS competitor_price, cp.in_stock AS competitor_in_stock,
-        COUNT(*) OVER()::int AS total_count
+        cp.price_usd AS competitor_price, cp.in_stock AS competitor_in_stock
       FROM product_matches pm
       JOIN products d ON d.id = pm.daka_product_id
       JOIN products c ON c.id = pm.competitor_product_id
@@ -40,24 +88,50 @@ export async function GET(request: NextRequest) {
       WHERE pm.status = 'review'
         AND (${search} = '' OR d.name ILIKE ${searchLike} OR d.external_id ILIKE ${searchLike}
           OR c.name ILIKE ${searchLike} OR c.external_id ILIKE ${searchLike})
-      ORDER BY pm.confidence DESC, d.name ASC, pm.id ASC
-      LIMIT ${limit} OFFSET ${offset}
+      ORDER BY d.id, pm.confidence DESC, pm.id ASC
     `;
-    const items = rows.map((row) => ({
-      matchId: asNumber(row.match_id), confidence: asNumber(row.confidence),
-      matchMethod: row.match_method, evidence: row.evidence ?? {},
-      daka: { id: asNumber(row.daka_id), externalId: row.daka_sap, name: row.daka_name,
-        url: row.daka_url, price: row.daka_price == null ? null : asNumber(row.daka_price),
-        inStock: row.daka_in_stock, brand: row.daka_brand ?? null,
-        model: row.daka_model ?? null, category: row.daka_category ?? null },
-      competitor: { id: asNumber(row.competitor_id), externalId: row.competitor_reference,
-        name: row.competitor_name, url: row.competitor_url, brand: row.competitor_brand,
-        model: row.competitor_model ?? null, category: row.competitor_category ?? null,
-        price: row.competitor_price == null ? null : asNumber(row.competitor_price),
-        inStock: row.competitor_in_stock }
-    }));
-    const total = rows.length ? asNumber(rows[0].total_count) : 0;
-    return NextResponse.json({ items, total, offset, limit, hasMore: offset + items.length < total });
+
+    const grouped = new Map<number, any>();
+    for (const row of rows) {
+      const dakaId = asNumber(row.daka_id);
+      if (!grouped.has(dakaId)) {
+        grouped.set(dakaId, {
+          daka: {
+            id: dakaId, externalId: row.daka_sap, name: row.daka_name, url: row.daka_url,
+            price: row.daka_price == null ? null : asNumber(row.daka_price), inStock: row.daka_in_stock,
+            brand: row.daka_brand ?? null, model: row.daka_model ?? null, category: row.daka_category ?? null,
+          },
+          candidates: [],
+        });
+      }
+      const evidence = (row.evidence ?? {}) as Evidence;
+      const confidence = asNumber(row.confidence);
+      grouped.get(dakaId).candidates.push({
+        matchId: asNumber(row.match_id), confidence, matchMethod: row.match_method, evidence,
+        bulkEligible: isBulkEligible(confidence, row.match_method, evidence),
+        competitor: {
+          id: asNumber(row.competitor_id), externalId: row.competitor_reference,
+          name: row.competitor_name, url: row.competitor_url, brand: row.competitor_brand ?? null,
+          model: row.competitor_model ?? null, category: row.competitor_category ?? null,
+          price: row.competitor_price == null ? null : asNumber(row.competitor_price),
+          inStock: row.competitor_in_stock,
+        },
+      });
+    }
+    const groups = [...grouped.values()].sort((left, right) =>
+      (right.candidates[0]?.confidence ?? 0) - (left.candidates[0]?.confidence ?? 0)
+      || left.daka.name.localeCompare(right.daka.name, "es")
+    );
+    const page = groups.slice(offset, offset + limit);
+    return NextResponse.json({
+      groups: page,
+      totalProducts: groups.length,
+      totalAlternatives: rows.length,
+      safeCandidates: groups.filter((group) => group.candidates.some((candidate: any) => candidate.bulkEligible)).length,
+      offset,
+      limit,
+      hasMore: offset + page.length < groups.length,
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "No fue posible cargar las homologaciones pendientes" }, { status: 500 });
@@ -71,12 +145,35 @@ export async function POST(request: NextRequest) {
   }
   try {
     const body = await request.json();
+    const sql = getSql();
+    if (body.action === "confirm_bulk") {
+      const submittedIds: unknown[] = Array.isArray(body.matchIds) ? body.matchIds : [];
+      const matchIds: number[] = [...new Set<number>(submittedIds
+        .map((value) => Number(value))
+        .filter((id) => Number.isInteger(id) && id > 0))]
+        .slice(0, 50);
+      if (!matchIds.length) return NextResponse.json({ error: "No seleccionaste coincidencias válidas" }, { status: 400 });
+      let confirmed = 0;
+      let skipped = 0;
+      for (const matchId of matchIds) {
+        const candidateRows = await sql`SELECT confidence, match_method, evidence FROM product_matches WHERE id = ${matchId} AND status = 'review'`;
+        const candidate = candidateRows[0];
+        if (!candidate || !isBulkEligible(asNumber(candidate.confidence), candidate.match_method, candidate.evidence ?? {})) {
+          skipped += 1;
+          continue;
+        }
+        const rows = await confirmOne(sql, matchId);
+        if (rows.length) confirmed += 1;
+        else skipped += 1;
+      }
+      return NextResponse.json({ ok: true, status: "confirmed", confirmed, skipped });
+    }
+
     const matchId = Number(body.matchId);
     const action = body.action;
     if (!Number.isInteger(matchId) || matchId <= 0 || !["confirm", "reject"].includes(action)) {
       return NextResponse.json({ error: "Solicitud de homologación inválida" }, { status: 400 });
     }
-    const sql = getSql();
     if (action === "reject") {
       const rows = await sql`
         UPDATE product_matches SET status = 'rejected', updated_at = NOW()
@@ -86,28 +183,7 @@ export async function POST(request: NextRequest) {
       if (!rows.length) return NextResponse.json({ error: "La coincidencia ya fue procesada" }, { status: 409 });
       return NextResponse.json({ ok: true, status: "rejected" });
     }
-    const rows = await sql`
-      WITH target AS (
-        SELECT pm.id, pm.daka_product_id, pm.competitor_product_id, c.source_id
-        FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
-        WHERE pm.id = ${matchId} AND pm.status = 'review'
-      ), rejected_conflicts AS (
-        UPDATE product_matches other SET status = 'rejected', updated_at = NOW()
-        FROM target
-        WHERE other.id <> target.id AND other.status IN ('auto', 'review')
-          AND (
-            other.competitor_product_id = target.competitor_product_id
-            OR (other.daka_product_id = target.daka_product_id AND EXISTS (
-              SELECT 1 FROM products other_competitor
-              WHERE other_competitor.id = other.competitor_product_id
-                AND other_competitor.source_id = target.source_id
-            ))
-          )
-        RETURNING other.id
-      )
-      UPDATE product_matches pm SET status = 'confirmed', updated_at = NOW()
-      FROM target WHERE pm.id = target.id RETURNING pm.id
-    `;
+    const rows = await confirmOne(sql, matchId);
     if (!rows.length) return NextResponse.json({ error: "La coincidencia ya fue procesada" }, { status: 409 });
     return NextResponse.json({ ok: true, status: "confirmed" });
   } catch (error) {

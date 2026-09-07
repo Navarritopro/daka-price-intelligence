@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from matching import attribute_signature, canonical_model, infer_brand, model_tokens, normalize, product_type, similarity
+from matching import attribute_signature, canonical_model, color_tokens, infer_brand, model_tokens, normalize, product_type, similarity
 
 
 class CompetitorMatchingTests(unittest.TestCase):
@@ -81,6 +81,22 @@ class CompetitorMatchingTests(unittest.TestCase):
         self.assertGreaterEqual(score, 0.66)
         self.assertEqual(method, "type_attributes")
         self.assertTrue(evidence["warnings"])
+
+    def test_short_phone_family_is_a_model_token(self):
+        self.assertIn("A06", model_tokens("Celular Samsung Galaxy A06 64 GB"))
+        self.assertIn("S26", model_tokens("Samsung Galaxy S26 Ultra 512 GB"))
+        self.assertNotIn("64GB", model_tokens("Celular Samsung Galaxy A06 64 GB"))
+
+    def test_color_is_informative_not_a_conflict(self):
+        score, method, evidence = similarity(
+            {"name": "Celular Samsung Galaxy A06 4 GB 64 GB Verde"},
+            {"name": "Celular Samsung A06 4 GB 64 GB Azul"},
+        )
+        self.assertGreaterEqual(score, 0.93)
+        self.assertEqual(method, "model_brand")
+        self.assertFalse(evidence["conflicts"])
+        self.assertTrue(evidence["variantNotes"])
+        self.assertEqual(color_tokens("Equipo negro y azul"), {"negro", "azul"})
 
 
 if __name__ == "__main__":

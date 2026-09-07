@@ -52,6 +52,7 @@ export async function GET() {
         COALESCE(tc.drops, 0)::int AS drops_today,
         COALESCE(tc.increases, 0)::int AS increases_today,
         lj.status AS last_job_status,
+        lj.started_at AS last_job_at,
         EXTRACT(EPOCH FROM (lj.finished_at - lj.started_at))::int AS duration_seconds
       FROM products p
       JOIN sources s ON s.id = p.source_id AND s.slug = 'daka'
@@ -74,6 +75,7 @@ export async function GET() {
       averagePrice: asNumber(summary?.average_price),
       lastScrapeAt: summary?.last_successful_scrape_at ?? summary?.last_recorded_price_at ?? null,
       lastJobStatus: summary?.last_job_status ?? null,
+      lastJobAt: summary?.last_job_at ?? null,
       lastJobDurationSeconds: summary?.duration_seconds == null ? null : asNumber(summary.duration_seconds),
       nextRun: "09:00 AM VET"
     });
