@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from matching import attribute_signature, canonical_model, color_tokens, infer_brand, model_tokens, normalize, product_type, similarity
+from matching import REVIEW_THRESHOLD, attribute_signature, canonical_model, color_tokens, infer_brand, model_tokens, normalize, product_type, similarity
 
 
 class CompetitorMatchingTests(unittest.TestCase):
@@ -97,6 +97,33 @@ class CompetitorMatchingTests(unittest.TestCase):
         self.assertFalse(evidence["conflicts"])
         self.assertTrue(evidence["variantNotes"])
         self.assertEqual(color_tokens("Equipo negro y azul"), {"negro", "azul"})
+
+    def test_connectivity_technologies_are_not_models(self):
+        tokens = model_tokens("Módem Router ADSL2+ WiFi 6 USB3 300 Mbps")
+        self.assertNotIn("ADSL2", tokens)
+        self.assertNotIn("WIFI6", tokens)
+        self.assertNotIn("USB3", tokens)
+        self.assertNotIn("300MBPS", tokens)
+
+    def test_network_attributes_are_extracted(self):
+        attributes = attribute_signature("Router inalámbrico N 1 Gbps 5 GHz con cuatro antenas y 4 puertos")
+        self.assertIn("1000:mbps", attributes)
+        self.assertIn("5:ghz", attributes)
+        self.assertIn("4:antenas", attributes)
+        self.assertIn("4:puertos", attributes)
+        self.assertIn("tech:wireless n", attributes)
+
+    def test_generic_adsl_does_not_create_false_model_match(self):
+        daka = {"name": "Modem Router 300 Mbps N ADSL2 Dos Antenas Blanco TP-Link"}
+        wrong = {"name": "Módem Explore ADSL2+", "brand": "TP-LINK", "model": "HGA1101"}
+        better = {"name": "Módem Router Inalámbrico ADSL2+ N 300Mbps", "brand": "TP-LINK", "model": "TDW8961N"}
+        wrong_score, wrong_method, wrong_evidence = similarity(daka, wrong)
+        better_score, better_method, better_evidence = similarity(daka, better)
+        self.assertNotIn("ADSL2", wrong_evidence.get("sharedModels", []))
+        self.assertLess(wrong_score, REVIEW_THRESHOLD)
+        self.assertGreaterEqual(better_score, REVIEW_THRESHOLD)
+        self.assertEqual(better_method, "brand_type_attributes")
+        self.assertIn("300:mbps", better_evidence["sharedAttributes"])
 
 
 if __name__ == "__main__":

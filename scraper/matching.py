@@ -7,7 +7,7 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 
 
-MATCH_ENGINE_VERSION = "2.1"
+MATCH_ENGINE_VERSION = "2.2"
 AUTO_THRESHOLD = 0.93
 REVIEW_THRESHOLD = 0.66
 MAX_REVIEW_CANDIDATES = 5
@@ -20,6 +20,8 @@ BRAND_ALIASES = {
     "general electric": "ge", "ge appliances": "ge",
     "hewlett packard": "hp", "hp inc": "hp", "xiaomi redmi": "xiaomi",
     "mabe internacional": "mabe", "american star": "americanstar",
+    "tp link": "tplink", "tp-link": "tplink", "tplink": "tplink",
+    "d link": "dlink", "d-link": "dlink", "dlink": "dlink",
 }
 KNOWN_BRANDS = tuple(sorted({
     "black and decker", "black decker", "hewlett packard", "damasco technology",
@@ -32,14 +34,22 @@ KNOWN_BRANDS = tuple(sorted({
     "premier", "mastertech", "condesa", "atlas", "westinghouse", "klip xtreme",
     "logitech", "canon", "nikon", "kitchenaid", "cuisinart", "holstein", "taurus",
     "imusa", "umco", "arno", "gama", "babyliss", "rowenta", "dyson", "ge",
+    "tp link", "tp-link", "tplink", "d link", "d-link", "dlink", "mercusys",
+    "tenda", "linksys", "ubiquiti", "mikrotik", "netis", "zte",
     "hp", "lg", "jbl", "rca", "acer", "asus", "epson",
 }, key=len, reverse=True))
 
 GENERIC_MODEL = re.compile(
-    r"^(?:\d+(?:[.]\d+)?(?:V|W|HZ|BTU|KG|LB|L|LTS|PULG|IN|GB|TB|CM|MM|OZ|PIES)|"
+    r"^(?:\d+(?:[.]\d+)?(?:V|W|HZ|GHZ|MHZ|MBPS|GBPS|BTU|KG|LB|L|LTS|PULG|IN|GB|TB|CM|MM|OZ|PIES)|"
     r"\d+K|\d+X\d+|(?:FULL)?HD|UHD|QLED|OLED|SMART|WIFI|INVERTER)$",
     re.IGNORECASE,
 )
+GENERIC_CONNECTIVITY_MODELS = {
+    "ADSL", "ADSL2", "VDSL", "VDSL2", "DOCSIS", "ETHERNET",
+    "WIFI", "WIFI4", "WIFI5", "WIFI6", "WIFI6E", "WIFI7",
+    "USB2", "USB3", "HDMI1", "HDMI2", "BT4", "BT5",
+    "BLUETOOTH4", "BLUETOOTH5", "LAN", "WAN",
+}
 MODEL_TOKEN = re.compile(
     r"(?=[A-Z0-9./-]{4,})(?=[A-Z0-9./-]*[A-Z])(?=[A-Z0-9./-]*\d)"
     r"[A-Z0-9]+(?:[./-][A-Z0-9]+)*"
@@ -61,6 +71,10 @@ PRODUCT_TYPES = {
     "laptop": r"\b(laptop|notebook|computadora portatil)\b", "impresora": r"\b(impresora|multifuncional)\b",
     "ventilador": r"\bventilador\b", "calentador": r"\bcalentador\b",
     "dispensador": r"\bdispensador\b", "extractor": r"\bextractor\b",
+    "modem": r"\b(modem|adsl|vdsl)\b", "router": r"\b(router|enrutador)\b",
+    "repetidor": r"\b(repetidor|extensor de rango|range extender)\b",
+    "sistema_mesh": r"\b(mesh|wifi mallado)\b",
+    "access_point": r"\b(access point|punto de acceso)\b",
 }
 TECHNOLOGY_ALIASES = {
     "inverter": ("inverter",), "qled": ("qled",), "oled": ("oled",), "uhd": ("uhd", "ultra hd"),
@@ -69,6 +83,10 @@ TECHNOLOGY_ALIASES = {
     "carga frontal": ("carga frontal",), "carga superior": ("carga superior",),
     "doble tina": ("doble tina",), "semiautomatica": ("semiautomatica",),
     "automatica": ("automatica",), "no frost": ("no frost",),
+    "adsl": ("adsl",), "adsl2": ("adsl2",), "vdsl": ("vdsl",), "vdsl2": ("vdsl2",),
+    "wifi 6": ("wifi 6", "wifi6"), "wifi 6e": ("wifi 6e", "wifi6e"),
+    "wifi 7": ("wifi 7", "wifi7"), "doble banda": ("doble banda", "dual band"),
+    "gigabit": ("gigabit",),
 }
 COLOR_WORDS = {
     "amarillo", "azul", "beige", "blanco", "blanca", "dorado", "dorada", "gris",
@@ -112,20 +130,30 @@ def canonical_model(token: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (token or "").upper())
 
 
+def _is_generic_model(token: str) -> bool:
+    canonical = canonical_model(token)
+    return bool(
+        GENERIC_MODEL.match(token)
+        or GENERIC_MODEL.match(canonical)
+        or canonical in GENERIC_CONNECTIVITY_MODELS
+        or re.fullmatch(r"\d+(?:MBPS|GBPS|GHZ|MHZ|PORTS?|PUERTOS?|ANTENNAS?|ANTENAS?)", canonical)
+    )
+
+
 def model_tokens(name: str, explicit: str | None = None) -> set[str]:
     source = f"{explicit or ''} {name}".upper().replace("DA+CO", "DAMASCO")
     tokens = set()
     for token in MODEL_TOKEN.findall(source):
         cleaned = token.strip("-/. ")
         canonical = canonical_model(cleaned)
-        if len(canonical) >= 4 and not GENERIC_MODEL.match(cleaned) and not GENERIC_MODEL.match(canonical):
+        if len(canonical) >= 4 and not _is_generic_model(cleaned):
             tokens.add(canonical)
     # Familias comerciales cortas frecuentes en telefonía (A06, S26, G54) no
     # cumplen el mínimo general de cuatro caracteres, pero son discriminantes
     # cuando marca y tipo también coinciden.
     for token in MODEL_FAMILY_TOKEN.findall(source):
         canonical = canonical_model(token)
-        if not GENERIC_MODEL.match(canonical):
+        if not _is_generic_model(canonical):
             tokens.add(canonical)
     return tokens
 
@@ -149,13 +177,23 @@ def _attribute_values(name: str) -> dict[str, set[float | str]]:
     raw = raw.replace("”", " pulg ").replace("“", " pulg ").replace('"', " pulg ")
     raw = re.sub(r"[^a-z0-9.]+", " ", raw)
     raw = re.sub(r"\s+", " ", raw).strip()
-    unit_aliases = {"pulgadas": "pulg", "pulgada": "pulg", "pulg": "pulg", "in": "pulg", "litros": "l", "litro": "l", "lts": "l", "lt": "l", "l": "l", "watts": "w", "watt": "w", "w": "w", "libras": "lb", "libra": "lb", "pies cubicos": "ft3", "pie cubico": "ft3", "cu ft": "ft3", "ft3": "ft3"}
+    unit_aliases = {"pulgadas": "pulg", "pulgada": "pulg", "pulg": "pulg", "in": "pulg", "litros": "l", "litro": "l", "lts": "l", "lt": "l", "l": "l", "watts": "w", "watt": "w", "w": "w", "libras": "lb", "libra": "lb", "pies cubicos": "ft3", "pie cubico": "ft3", "cu ft": "ft3", "ft3": "ft3", "megabits": "mbps", "mbps": "mbps", "gbps": "mbps", "antena": "antenas", "antenas": "antenas", "puerto": "puertos", "puertos": "puertos"}
     values: dict[str, set[float | str]] = defaultdict(set)
-    pattern = r"\b(\d+(?:\.\d+)?)\s*(btu|kg|pulgadas|pulgada|pulg|in|litros|litro|lts|lt|l|watts|watt|w|oz|lb|libras|libra|pies cubicos|pie cubico|cu ft|ft3|gb|tb|hz)\b"
+    pattern = r"\b(\d+(?:\.\d+)?)\s*(btu|kg|pulgadas|pulgada|pulg|in|litros|litro|lts|lt|l|watts|watt|w|oz|lb|libras|libra|pies cubicos|pie cubico|cu ft|ft3|gb|tb|hz|ghz|mhz|megabits|mbps|gbps|antena|antenas|puerto|puertos)\b"
     for number, raw_unit in re.findall(pattern, raw):
         # Spanish catalog names often use a dot as a thousands separator (12.000 BTU).
         parsed_number = float(number.replace(".", "")) if re.fullmatch(r"\d+\.\d{3}", number) else float(number)
-        values[unit_aliases.get(raw_unit, raw_unit)].add(parsed_number)
+        unit = unit_aliases.get(raw_unit, raw_unit)
+        values[unit].add(parsed_number * 1000 if raw_unit == "gbps" else parsed_number)
+    number_words = {"una": 1.0, "un": 1.0, "uno": 1.0, "dos": 2.0, "tres": 3.0, "cuatro": 4.0, "cinco": 5.0, "seis": 6.0, "ocho": 8.0}
+    for word, unit in re.findall(r"\b(una|un|uno|dos|tres|cuatro|cinco|seis|ocho)\s+(antena|antenas|puerto|puertos)\b", raw):
+        values[unit_aliases[unit]].add(number_words[word])
+    if re.search(r"\b(?:wifi|wi fi|inalambrico|wireless).*?\b(?:802 11)?n\b", raw):
+        values["technology"].add("wireless n")
+    if re.search(r"\b(?:wifi|wi fi|inalambrico|wireless).*?\b(?:802 11)?ac\b", raw):
+        values["technology"].add("wireless ac")
+    if re.search(r"\b(?:wifi|wi fi|inalambrico|wireless).*?\b(?:802 11)?ax\b", raw):
+        values["technology"].add("wireless ax")
     for technology, aliases in TECHNOLOGY_ALIASES.items():
         if any(re.search(rf"\b{re.escape(alias)}\b", raw) for alias in aliases):
             values["technology"].add(technology)
@@ -240,6 +278,14 @@ def similarity(left: dict, right: dict) -> tuple[float, str, dict]:
             method = "brand_attributes"; evidence["warnings"].append("El tipo de producto no pudo confirmarse en ambos catálogos")
         else:
             return 0.0, "insufficient", evidence
+        if left_type in {"modem", "router", "repetidor", "sistema_mesh", "access_point"}:
+            critical_units = {"mbps", "ghz", "antenas", "puertos"}
+            missing_right = sorted((set(left_attributes) & critical_units) - set(right_attributes))
+            if missing_right:
+                score -= min(0.12, 0.04 * len(missing_right))
+                evidence["warnings"].append(
+                    "Faltan especificaciones de conectividad en la alternativa: " + ", ".join(missing_right)
+                )
         if score < REVIEW_THRESHOLD:
             return 0.0, "insufficient", evidence
         score = min(0.89, score)

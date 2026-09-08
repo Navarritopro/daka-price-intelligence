@@ -156,7 +156,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
   }
 
   return <section className="review-module">
-    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación · Motor V2.1</span><h2>Coincidencias agrupadas por producto</h2><p>Revisa un producto DAKA y elige solamente su alternativa equivalente en {competitorName}.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
+    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación · Motor V2.2</span><h2>Coincidencias agrupadas por producto</h2><p>Revisa un producto DAKA y elige solamente su alternativa equivalente en {competitorName}.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
     <div className="review-summary">
       <div><strong>{integer.format(totalProducts)}</strong><span>productos DAKA por validar</span></div>
       <div><strong>{integer.format(totalAlternatives)}</strong><span>alternativas analizadas</span></div>
