@@ -153,10 +153,12 @@ class MultimaxScraper:
         slug = str(raw.get("slug") or "").strip()
         if not sku or not name:
             return None
-        price = self._decimal(raw.get("salePrice") if raw.get("onSale") and raw.get("salePrice") is not None else raw.get("price"))
-        base_price = self._decimal(raw.get("price"))
+        # Multimax exposes several commercial price modes. The public product
+        # detail renders `price`; `salePrice`/`precioAhorroUsd` can be present
+        # even when that lower value is not shown to an anonymous customer.
+        price = self._decimal(raw.get("price"))
         regular_price = self._decimal(raw.get("regularPrice"))
-        list_price = base_price if raw.get("onSale") and base_price and price and base_price > price else regular_price
+        list_price = regular_price if regular_price and price and regular_price > price else None
         stock = raw.get("stock")
         quantity = int(stock) if isinstance(stock, (int, float)) and not isinstance(stock, bool) else None
         status = str(raw.get("stockStatus") or "").lower()
@@ -177,7 +179,13 @@ class MultimaxScraper:
             model=self._model(raw, name, sku),
             metadata={
                 "remoteId": raw.get("id"), "slug": slug, "stockStatus": raw.get("stockStatus"),
-                "onSale": bool(raw.get("onSale")), "categories": raw.get("categories") or [],
+                "onSale": bool(raw.get("onSale")),
+                "publicPrice": raw.get("price"),
+                "alternateSalePrice": raw.get("salePrice"),
+                "precioAhorroUsd": raw.get("precioAhorroUsd"),
+                "precioAhorroZlUsd": raw.get("precioAhorroZlUsd"),
+                "pricingRule": "public_product_detail",
+                "categories": raw.get("categories") or [],
                 "attributes": raw.get("attributes") or [],
             },
         )
