@@ -2,8 +2,11 @@ name: Scraping diario Damasco
 
 on:
   schedule:
-    # 13:07 UTC = 09:07 AM VET. Evita la congestión habitual del inicio de cada hora.
+    # Intento principal y dos respaldos. El scraper omite el trabajo si Damasco
+    # ya tiene una captura exitosa del día en hora de Venezuela.
     - cron: "7 13 * * *"
+    - cron: "7 15 * * *"
+    - cron: "7 17 * * *"
   workflow_dispatch:
     inputs:
       trigger_type:

@@ -2,8 +2,11 @@ name: Scraping diario Multimax
 
 on:
   schedule:
-    # 13:20 UTC = 09:20 AM VET, después de DAKA y Damasco.
+    # Intento principal y dos respaldos. El scraper omite el trabajo si Multimax
+    # ya tiene una captura exitosa del día en hora de Venezuela.
     - cron: "20 13 * * *"
+    - cron: "20 15 * * *"
+    - cron: "20 17 * * *"
   workflow_dispatch:
     inputs:
       trigger_type:
