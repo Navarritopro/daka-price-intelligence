@@ -1,9 +1,9 @@
-name: Recalcular homologaciones DAKA-Damasco
+name: Recalcular homologaciones multicompetidor
 
 on:
   workflow_dispatch:
   schedule:
-    # 10:30 a. m. Venezuela (UTC-4), después de las capturas de ambas tiendas.
+    # 10:30 a. m. Venezuela (UTC-4), después de las capturas de todas las tiendas.
     - cron: "30 14 * * *"
 
 permissions:
