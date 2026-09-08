@@ -248,20 +248,27 @@ def similarity(left: dict, right: dict) -> tuple[float, str, dict]:
     return round(min(0.99, score), 4), method, evidence
 
 
-def refresh_damasco_matches(database_url: str) -> dict[str, int]:
+def refresh_competitor_matches(database_url: str, competitor_slug: str) -> dict[str, int | str]:
+    """Rebuild automatic/review proposals for one competitor.
+
+    Confirmed and rejected decisions are deliberately kept per competitor source.
+    """
     import psycopg
     from psycopg.rows import dict_row
 
+    if not competitor_slug or competitor_slug == "daka":
+        raise ValueError("La fuente competidora debe ser distinta de DAKA")
+
     with psycopg.connect(database_url, row_factory=dict_row) as conn:
         daka = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = 'daka'""").fetchall()]
-        damasco = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = 'damasco'""").fetchall()]
-        protected = conn.execute("""SELECT pm.daka_product_id, pm.competitor_product_id, pm.status FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id JOIN sources s ON s.id = c.source_id WHERE s.slug = 'damasco' AND pm.status IN ('confirmed', 'rejected')""").fetchall()
+        competitor = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = %s""", (competitor_slug,)).fetchall()]
+        protected = conn.execute("""SELECT pm.daka_product_id, pm.competitor_product_id, pm.status FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id JOIN sources s ON s.id = c.source_id WHERE s.slug = %s AND pm.status IN ('confirmed', 'rejected')""", (competitor_slug,)).fetchall()
         confirmed_daka = {row["daka_product_id"] for row in protected if row["status"] == "confirmed"}
         confirmed_competitors = {row["competitor_product_id"] for row in protected if row["status"] == "confirmed"}
         rejected_pairs = {(row["daka_product_id"], row["competitor_product_id"]) for row in protected if row["status"] == "rejected"}
 
         by_model, by_brand_type, by_brand, by_type = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
-        for product in damasco:
+        for product in competitor:
             for token in model_tokens(product["name"], product.get("model")): by_model[token].append(product)
             brand = infer_brand(product["name"], product.get("brand")); kind = product_type(product["name"], product.get("category"))
             if brand: by_brand[brand].append(product)
@@ -311,10 +318,25 @@ def refresh_damasco_matches(database_url: str) -> dict[str, int]:
             else:
                 proposal[4]["warnings"].append("Existe otra homologación con mayor prioridad"); review.append(proposal)
 
-        conn.execute("""DELETE FROM product_matches pm USING products c, sources s WHERE pm.competitor_product_id = c.id AND c.source_id = s.id AND s.slug = 'damasco' AND pm.status IN ('auto', 'review')""")
+        conn.execute("""DELETE FROM product_matches pm USING products c, sources s WHERE pm.competitor_product_id = c.id AND c.source_id = s.id AND s.slug = %s AND pm.status IN ('auto', 'review')""", (competitor_slug,))
         saved = []
         for status, proposals in (("auto", accepted_automatic), ("review", review)):
             for score, source, candidate, method, evidence in proposals:
                 conn.execute("""INSERT INTO product_matches (daka_product_id, competitor_product_id, status, match_method, confidence, evidence) VALUES (%s, %s, %s, %s, %s, %s::jsonb) ON CONFLICT (daka_product_id, competitor_product_id) DO UPDATE SET status = CASE WHEN product_matches.status IN ('confirmed', 'rejected') THEN product_matches.status ELSE EXCLUDED.status END, match_method = EXCLUDED.match_method, confidence = EXCLUDED.confidence, evidence = EXCLUDED.evidence, updated_at = NOW()""", (source["id"], candidate["id"], status, method, score, json.dumps(evidence)))
                 saved.append(status)
-        return {"automatic": saved.count("auto"), "review": saved.count("review"), "confirmed": len(confirmed_daka), "rejectedPairs": len(rejected_pairs), "productsWithCandidates": products_with_candidates, "dakaProducts": len(daka), "damascoProducts": len(damasco)}
+        return {"source": competitor_slug, "automatic": saved.count("auto"), "review": saved.count("review"), "confirmed": len(confirmed_daka), "rejectedPairs": len(rejected_pairs), "productsWithCandidates": products_with_candidates, "dakaProducts": len(daka), "competitorProducts": len(competitor)}
+
+
+def refresh_damasco_matches(database_url: str) -> dict[str, int | str]:
+    """Compatibility wrapper for existing Damasco entry points."""
+    return refresh_competitor_matches(database_url, "damasco")
+
+
+def refresh_all_matches(database_url: str) -> dict[str, dict[str, int | str]]:
+    import psycopg
+
+    with psycopg.connect(database_url) as conn:
+        rows = conn.execute(
+            "SELECT slug FROM sources WHERE active = TRUE AND slug <> 'daka' ORDER BY slug"
+        ).fetchall()
+    return {row[0]: refresh_competitor_matches(database_url, row[0]) for row in rows}

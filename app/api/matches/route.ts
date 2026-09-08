@@ -55,6 +55,8 @@ async function confirmOne(sql: ReturnType<typeof getSql>, matchId: number) {
 export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
+    const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "damasco";
+    const source = ["damasco", "multimax"].includes(requestedSource) ? requestedSource : "damasco";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const searchLike = `%${search}%`;
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 15, 1), 25);
@@ -64,9 +66,9 @@ export async function GET(request: NextRequest) {
         SELECT j.id FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
         WHERE s.slug = 'daka' AND j.status = 'success'
         ORDER BY j.started_at DESC LIMIT 1
-      ), latest_damasco_job AS (
+      ), latest_competitor_job AS (
         SELECT j.id FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
-        WHERE s.slug = 'damasco' AND j.status = 'success'
+        WHERE s.slug = ${source} AND j.status = 'success'
         ORDER BY j.started_at DESC LIMIT 1
       )
       SELECT pm.id AS match_id, pm.confidence, pm.match_method, pm.evidence,
@@ -80,11 +82,11 @@ export async function GET(request: NextRequest) {
       FROM product_matches pm
       JOIN products d ON d.id = pm.daka_product_id
       JOIN products c ON c.id = pm.competitor_product_id
-      JOIN sources s ON s.id = c.source_id AND s.slug = 'damasco'
+      JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
       LEFT JOIN price_history dp ON dp.product_id = d.id
         AND dp.job_id = (SELECT id FROM latest_daka_job)
       LEFT JOIN price_history cp ON cp.product_id = c.id
-        AND cp.job_id = (SELECT id FROM latest_damasco_job)
+        AND cp.job_id = (SELECT id FROM latest_competitor_job)
       WHERE pm.status = 'review'
         AND (${search} = '' OR d.name ILIKE ${searchLike} OR d.external_id ILIKE ${searchLike}
           OR c.name ILIKE ${searchLike} OR c.external_id ILIKE ${searchLike})
@@ -124,6 +126,7 @@ export async function GET(request: NextRequest) {
     );
     const page = groups.slice(offset, offset + limit);
     return NextResponse.json({
+      source,
       groups: page,
       totalProducts: groups.length,
       totalAlternatives: rows.length,

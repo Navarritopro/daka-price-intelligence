@@ -13,7 +13,7 @@ export async function GET() {
             ROW_NUMBER() OVER (PARTITION BY j.source_id ORDER BY j.started_at DESC) AS source_position
           FROM scraping_jobs j
           JOIN sources s ON s.id = j.source_id
-          WHERE s.slug IN ('daka', 'damasco')
+          WHERE s.active = TRUE
         )
         SELECT id, source_slug, source_name, trigger_type, status, started_at, finished_at,
           products_found, products_saved, products_without_sku,
@@ -38,7 +38,7 @@ export async function GET() {
         FROM sources s
         LEFT JOIN latest_success ls ON ls.source_id = s.id
         LEFT JOIN price_history ph ON ph.job_id = ls.id
-        WHERE s.slug IN ('daka', 'damasco')
+        WHERE s.active = TRUE
         GROUP BY s.id, s.slug, s.name, s.base_url
         ORDER BY s.slug
       `,
@@ -47,7 +47,7 @@ export async function GET() {
         FROM product_matches pm
         JOIN products competitor ON competitor.id = pm.competitor_product_id
         JOIN sources s ON s.id = competitor.source_id
-        WHERE s.slug IN ('daka', 'damasco')
+        WHERE s.active = TRUE AND s.slug <> 'daka'
         GROUP BY s.slug, pm.status
       `
     ]);

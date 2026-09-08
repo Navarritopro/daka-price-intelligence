@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-from matching import refresh_damasco_matches
+from matching import refresh_all_matches
 
 
 def main() -> int:
@@ -13,7 +13,7 @@ def main() -> int:
         print("DATABASE_URL no está configurada", file=sys.stderr)
         return 2
     try:
-        result = refresh_damasco_matches(database_url)
+        result = refresh_all_matches(database_url)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     except Exception as exc:

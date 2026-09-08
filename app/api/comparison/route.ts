@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
+    const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "damasco";
+    const source = ["damasco", "multimax"].includes(requestedSource) ? requestedSource : "damasco";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
     const requestedPosition = request.nextUrl.searchParams.get("position") ?? "all";
@@ -21,15 +23,15 @@ export async function GET(request: NextRequest) {
     const rows = await sql`
       WITH daka_source AS (
         SELECT id FROM sources WHERE slug = 'daka'
-      ), damasco_source AS (
-        SELECT id FROM sources WHERE slug = 'damasco'
+      ), competitor_source AS (
+        SELECT id FROM sources WHERE slug = ${source}
       ), latest_daka_job AS (
         SELECT id FROM scraping_jobs
         WHERE source_id = (SELECT id FROM daka_source) AND status = 'success'
         ORDER BY started_at DESC LIMIT 1
-      ), latest_damasco_job AS (
+      ), latest_competitor_job AS (
         SELECT id FROM scraping_jobs
-        WHERE source_id = (SELECT id FROM damasco_source) AND status = 'success'
+        WHERE source_id = (SELECT id FROM competitor_source) AND status = 'success'
         ORDER BY started_at DESC LIMIT 1
       ), comparisons AS (
         SELECT
@@ -50,11 +52,11 @@ export async function GET(request: NextRequest) {
         FROM product_matches pm
         JOIN products d ON d.id = pm.daka_product_id
         JOIN products c ON c.id = pm.competitor_product_id
-        JOIN sources cs ON cs.id = c.source_id AND cs.slug = 'damasco'
+        JOIN sources cs ON cs.id = c.source_id AND cs.slug = ${source}
         JOIN price_history dp
           ON dp.product_id = d.id AND dp.job_id = (SELECT id FROM latest_daka_job)
         JOIN price_history cp
-          ON cp.product_id = c.id AND cp.job_id = (SELECT id FROM latest_damasco_job)
+          ON cp.product_id = c.id AND cp.job_id = (SELECT id FROM latest_competitor_job)
         CROSS JOIN LATERAL (
           SELECT dp.price_usd - cp.price_usd AS price_gap
         ) calc
@@ -85,15 +87,15 @@ export async function GET(request: NextRequest) {
     `;
 
     const [stats] = await sql`
-      WITH damasco_source AS (
-        SELECT id FROM sources WHERE slug = 'damasco'
+      WITH competitor_source AS (
+        SELECT id FROM sources WHERE slug = ${source}
       ), latest_daka_job AS (
         SELECT j.id FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
         WHERE s.slug = 'daka' AND j.status = 'success'
         ORDER BY j.started_at DESC LIMIT 1
-      ), latest_damasco_job AS (
+      ), latest_competitor_job AS (
         SELECT j.id, j.finished_at FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
-        WHERE s.slug = 'damasco' AND j.status = 'success'
+        WHERE s.slug = ${source} AND j.status = 'success'
         ORDER BY j.started_at DESC LIMIT 1
       ), valid AS (
         SELECT dp.price_usd AS daka_price, cp.price_usd AS competitor_price
@@ -102,23 +104,23 @@ export async function GET(request: NextRequest) {
         JOIN price_history dp ON dp.product_id = pm.daka_product_id
           AND dp.job_id = (SELECT id FROM latest_daka_job)
         JOIN price_history cp ON cp.product_id = pm.competitor_product_id
-          AND cp.job_id = (SELECT id FROM latest_damasco_job)
-        WHERE c.source_id = (SELECT id FROM damasco_source)
+          AND cp.job_id = (SELECT id FROM latest_competitor_job)
+        WHERE c.source_id = (SELECT id FROM competitor_source)
           AND pm.status IN ('auto', 'confirmed')
           AND dp.price_usd IS NOT NULL AND cp.price_usd IS NOT NULL
       )
       SELECT
-        (SELECT COUNT(*) FROM products WHERE source_id = (SELECT id FROM damasco_source))::int AS competitor_products,
+        (SELECT COUNT(*) FROM products WHERE source_id = (SELECT id FROM competitor_source))::int AS competitor_products,
         (SELECT COUNT(DISTINCT pm.daka_product_id) FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
-          WHERE c.source_id = (SELECT id FROM damasco_source) AND pm.status = 'review')::int AS review_pending,
+          WHERE c.source_id = (SELECT id FROM competitor_source) AND pm.status = 'review')::int AS review_pending,
         (SELECT COUNT(*) FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id
-          WHERE c.source_id = (SELECT id FROM damasco_source) AND pm.status = 'review')::int AS review_alternatives,
+          WHERE c.source_id = (SELECT id FROM competitor_source) AND pm.status = 'review')::int AS review_alternatives,
         COUNT(*)::int AS matched_products,
         COUNT(*) FILTER (WHERE daka_price < competitor_price)::int AS daka_lower,
         COUNT(*) FILTER (WHERE daka_price > competitor_price)::int AS competitor_lower,
         COUNT(*) FILTER (WHERE daka_price = competitor_price)::int AS equal_price,
         COALESCE(AVG(ABS(((daka_price - competitor_price) / NULLIF(competitor_price, 0)) * 100)), 0)::numeric(10,2) AS average_gap_pct,
-        (SELECT finished_at FROM latest_damasco_job) AS competitor_last_scrape_at
+        (SELECT finished_at FROM latest_competitor_job) AS competitor_last_scrape_at
       FROM valid
     `;
 
@@ -127,7 +129,7 @@ export async function GET(request: NextRequest) {
       FROM product_matches pm
       JOIN products d ON d.id = pm.daka_product_id
       JOIN products c ON c.id = pm.competitor_product_id
-      JOIN sources s ON s.id = c.source_id AND s.slug = 'damasco'
+      JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
       WHERE pm.status IN ('auto', 'confirmed') AND d.category IS NOT NULL
       ORDER BY d.category
     `;
@@ -158,7 +160,7 @@ export async function GET(request: NextRequest) {
     const total = rows.length ? asNumber(rows[0].total_count) : 0;
 
     return NextResponse.json({
-      items, total, offset, limit, hasMore: offset + items.length < total,
+      source, items, total, offset, limit, hasMore: offset + items.length < total,
       categories: categoryRows.map((row) => row.category),
       stats: {
         competitorProducts: asNumber(stats?.competitor_products),
@@ -174,6 +176,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "No fue posible cargar el comparador DAKA vs. Damasco" }, { status: 500 });
+    return NextResponse.json({ error: "No fue posible cargar el comparador solicitado" }, { status: 500 });
   }
 }

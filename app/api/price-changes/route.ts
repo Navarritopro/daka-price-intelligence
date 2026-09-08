@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "daka";
-    const source = ["daka", "damasco"].includes(requestedSource) ? requestedSource : "daka";
+    const source = ["daka", "damasco", "multimax"].includes(requestedSource) ? requestedSource : "daka";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const requestedPeriod = request.nextUrl.searchParams.get("days") ?? "30";
     const period = ["1", "7", "30", "90", "all"].includes(requestedPeriod) ? requestedPeriod : "30";

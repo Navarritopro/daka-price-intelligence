@@ -56,14 +56,19 @@ const EMPTY_STATS: ComparisonStats = {
   dakaLower: 0, competitorLower: 0, equalPrice: 0,
   averageGapPct: 0, competitorLastScrapeAt: null
 };
+type CompetitorSource = "damasco" | "multimax";
+const COMPETITORS: Record<CompetitorSource, { name: string; short: string }> = {
+  damasco: { name: "Damasco", short: "D" },
+  multimax: { name: "Multimax", short: "MM" },
+};
 
 function formatDate(value: string | null) {
   return value ? `${vetDate.format(new Date(value))} VET` : "Sin captura";
 }
 
-function positionLabel(item: Comparison) {
+function positionLabel(item: Comparison, competitorName: string) {
   if (item.differenceUsd < 0) return "DAKA tiene mejor precio";
-  if (item.differenceUsd > 0) return "Damasco tiene mejor precio";
+  if (item.differenceUsd > 0) return `${competitorName} tiene mejor precio`;
   return "Mismo precio";
 }
 
@@ -78,6 +83,8 @@ function matchMethodLabel(method: string) {
 }
 
 export default function CompetitorComparison() {
+  const [source, setSource] = useState<CompetitorSource>("damasco");
+  const competitor = COMPETITORS[source];
   const [mode, setMode] = useState<"comparison" | "review">("comparison");
   const [refreshToken, setRefreshToken] = useState(0);
   const [items, setItems] = useState<Comparison[]>([]);
@@ -103,8 +110,8 @@ export default function CompetitorComparison() {
 
   const parameters = useCallback((offset: number) => new URLSearchParams({
     limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
-    category, position, sort
-  }), [category, debouncedSearch, position, sort]);
+    category, position, sort, source
+  }), [category, debouncedSearch, position, sort, source]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -160,6 +167,8 @@ export default function CompetitorComparison() {
 
   if (mode === "review") {
     return <MatchReview
+      source={source}
+      competitorName={competitor.name}
       onBack={() => {
         setRefreshToken((current) => current + 1);
         setMode("comparison");
@@ -169,10 +178,13 @@ export default function CompetitorComparison() {
   }
 
   return <>
+    <nav className="competitor-source-tabs" aria-label="Competidor seleccionado">
+      {(Object.entries(COMPETITORS) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={source === slug ? "active" : ""} onClick={() => { setSource(slug); setMode("comparison"); }}>{item.name}</button>)}
+    </nav>
     <section className="competitor-overview">
-      <div><span className="eyebrow-dark">Benchmarking competitivo · Fase 2</span><h2>DAKA frente a Damasco</h2><p>Solo se comparan productos equivalentes con coincidencia automática de alta confianza o validación confirmada.</p></div>
+      <div><span className="eyebrow-dark">Benchmarking competitivo · Multicompetidor</span><h2>DAKA frente a {competitor.name}</h2><p>Solo se comparan productos equivalentes con coincidencia automática de alta confianza o validación confirmada.</p></div>
       <div className="competitor-overview-actions">
-        <div className="competitor-freshness"><span>Última captura Damasco</span><strong>{formatDate(stats.competitorLastScrapeAt)}</strong></div>
+        <div className="competitor-freshness"><span>Última captura {competitor.name}</span><strong>{formatDate(stats.competitorLastScrapeAt)}</strong></div>
         <button className="secondary-button" type="button" onClick={() => setMode("review")}>
           Revisar {integer.format(stats.reviewPending)} productos
         </button>
@@ -180,34 +192,34 @@ export default function CompetitorComparison() {
     </section>
 
     <section className="comparison-stats">
-      <article><span>Catálogo Damasco</span><strong>{loading ? "…" : integer.format(stats.competitorProducts)}</strong><small>Productos monitoreados</small></article>
+      <article><span>Catálogo {competitor.name}</span><strong>{loading ? "…" : integer.format(stats.competitorProducts)}</strong><small>Productos monitoreados</small></article>
       <article><span>Productos homologados</span><strong>{loading ? "…" : integer.format(stats.matchedProducts)}</strong><small>Comparaciones confiables</small></article>
       <article className="daka-win"><span>DAKA con mejor precio</span><strong>{loading ? "…" : integer.format(stats.dakaLower)}</strong><small>Oportunidades competitivas</small></article>
-      <article className="competitor-win"><span>Damasco con mejor precio</span><strong>{loading ? "…" : integer.format(stats.competitorLower)}</strong><small>Brechas por revisar</small></article>
+      <article className="competitor-win"><span>{competitor.name} con mejor precio</span><strong>{loading ? "…" : integer.format(stats.competitorLower)}</strong><small>Brechas por revisar</small></article>
       <article><span>Productos por validar</span><strong>{loading ? "…" : integer.format(stats.reviewPending)}</strong><small>{integer.format(stats.reviewAlternatives)} alternativas analizadas</small></article>
     </section>
 
     <section className="filters comparison-filters">
       <input aria-label="Buscar productos comparados" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP, marca o referencia"/>
       <select aria-label="Categoría" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-      <select aria-label="Posición competitiva" value={position} onChange={(event) => setPosition(event.target.value)}><option value="all">Todas las posiciones</option><option value="daka_lower">DAKA más económico</option><option value="competitor_lower">Damasco más económico</option><option value="equal">Mismo precio</option></select>
+      <select aria-label="Posición competitiva" value={position} onChange={(event) => setPosition(event.target.value)}><option value="all">Todas las posiciones</option><option value="daka_lower">DAKA más económico</option><option value="competitor_lower">{competitor.name} más económico</option><option value="equal">Mismo precio</option></select>
       <select aria-label="Orden" value={sort} onChange={(event) => setSort(event.target.value)}><option value="gap_desc">Mayor brecha primero</option><option value="gap_asc">Menor brecha primero</option><option value="confidence">Mayor confianza</option><option value="recent">Captura más reciente</option></select>
     </section>
 
-    {error && <div className="error-banner"><strong>Comparador pendiente</strong><span>{error}. Verifica que la migración y la primera captura de Damasco estén completadas.</span></div>}
+    {error && <div className="error-banner"><strong>Comparador pendiente</strong><span>{error}. Verifica que la migración y la primera captura de {competitor.name} estén completadas.</span></div>}
 
     <section className="comparison-grid">
       <article className="comparison-table-card">
         <div className="section-head"><h2>Productos comparados</h2><small>{loading ? "Consultando…" : `Mostrando ${integer.format(items.length)} de ${integer.format(total)}`}</small></div>
-        {loading ? <div className="empty-state">Analizando las coincidencias DAKA–Damasco…</div> : items.length === 0 ? <div className="empty-state">No existen comparaciones confiables con estos filtros.</div> : <div className="table-scroll"><table className="comparison-table"><thead><tr><th>Producto DAKA</th><th>DAKA</th><th>Damasco</th><th>Diferencia</th><th>Posición</th></tr></thead><tbody>{items.map((item) => <tr key={item.matchId} className={selected?.matchId === item.matchId ? "selected-comparison" : ""} onClick={() => setSelected(item)}><td><b>{item.daka.name}</b><small>SAP {item.daka.externalId} · {item.daka.category ?? "Sin categoría"}</small></td><td><strong>{money.format(item.daka.price)}</strong><small>{item.daka.inStock === false ? "Sin stock" : "Disponible"}</small></td><td><strong>{money.format(item.competitor.price)}</strong><small>{item.competitor.externalId}</small></td><td className={item.differenceUsd <= 0 ? "comparison-favorable" : "comparison-unfavorable"}><b>{item.differenceUsd > 0 ? "+" : ""}{money.format(item.differenceUsd)}</b><small>{item.differencePct > 0 ? "+" : ""}{item.differencePct.toFixed(1)}%</small></td><td><span className={`position-badge ${item.differenceUsd < 0 ? "daka" : item.differenceUsd > 0 ? "damasco" : "equal"}`}>{positionLabel(item)}</span></td></tr>)}</tbody></table></div>}
+        {loading ? <div className="empty-state">Analizando las coincidencias DAKA–{competitor.name}…</div> : items.length === 0 ? <div className="empty-state">No existen comparaciones confiables con estos filtros.</div> : <div className="table-scroll"><table className="comparison-table"><thead><tr><th>Producto DAKA</th><th>DAKA</th><th>{competitor.name}</th><th>Diferencia</th><th>Posición</th></tr></thead><tbody>{items.map((item) => <tr key={item.matchId} className={selected?.matchId === item.matchId ? "selected-comparison" : ""} onClick={() => setSelected(item)}><td><b>{item.daka.name}</b><small>SAP {item.daka.externalId} · {item.daka.category ?? "Sin categoría"}</small></td><td><strong>{money.format(item.daka.price)}</strong><small>{item.daka.inStock === false ? "Sin stock" : "Disponible"}</small></td><td><strong>{money.format(item.competitor.price)}</strong><small>{item.competitor.externalId}</small></td><td className={item.differenceUsd <= 0 ? "comparison-favorable" : "comparison-unfavorable"}><b>{item.differenceUsd > 0 ? "+" : ""}{money.format(item.differenceUsd)}</b><small>{item.differencePct > 0 ? "+" : ""}{item.differencePct.toFixed(1)}%</small></td><td><span className={`position-badge ${item.differenceUsd < 0 ? "daka" : item.differenceUsd > 0 ? "damasco" : "equal"}`}>{positionLabel(item, competitor.name)}</span></td></tr>)}</tbody></table></div>}
         {items.length > 0 && <div className="changes-load-more">{hasMore ? <button onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Cargando…" : "Cargar 50 comparaciones más"}</button> : <span>Se mostraron todas las comparaciones</span>}</div>}
       </article>
 
       <article className="comparison-detail-card">
         {selected ? <><div className="comparison-detail-head"><span className="eyebrow-dark">Equivalencia detectada</span><h2>{selected.daka.name}</h2><p>Confianza {(selected.confidence * 100).toFixed(0)}% · {matchMethodLabel(selected.matchMethod)}</p></div>
-          <div className="store-comparison"><div><span className="store-label daka-store">DAKA</span><strong>{money.format(selected.daka.price)}</strong><small>SAP {selected.daka.externalId}</small><small>{selected.daka.inStock === false ? "Sin stock en última captura" : "Disponible en última captura"}</small><a href={selected.daka.url} target="_blank" rel="noreferrer">Abrir producto DAKA ↗</a></div><div><span className="store-label damasco-store">Damasco</span><strong>{money.format(selected.competitor.price)}</strong>{selected.competitor.listPrice != null && selected.competitor.listPrice > selected.competitor.price && <small>Precio anterior {money.format(selected.competitor.listPrice)}</small>}<small>Ref. {selected.competitor.externalId}</small><small>{selected.competitor.inStock === false ? "No disponible" : selected.competitor.availableQuantity == null ? "Disponible" : `${selected.competitor.availableQuantity} unidades reportadas`}</small><a href={selected.competitor.url} target="_blank" rel="noreferrer">Abrir producto Damasco ↗</a></div></div>
-          <div className={`competitive-conclusion ${selected.differenceUsd <= 0 ? "favorable" : "unfavorable"}`}><span>Lectura competitiva</span><strong>{positionLabel(selected)}</strong><p>{selected.differenceUsd === 0 ? "Ambas tiendas presentan el mismo precio." : `La brecha es de ${money.format(Math.abs(selected.differenceUsd))} (${Math.abs(selected.differencePct).toFixed(1)}%) respecto al precio de Damasco.`}</p></div>
-          <div className="comparison-meta"><div><span>Captura DAKA</span><b>{formatDate(selected.daka.scrapedAt)}</b></div><div><span>Captura Damasco</span><b>{formatDate(selected.competitor.scrapedAt)}</b></div></div></> : <div className="empty-state detail-empty">Selecciona una comparación para revisar la equivalencia.</div>}
+          <div className="store-comparison"><div><span className="store-label daka-store">DAKA</span><strong>{money.format(selected.daka.price)}</strong><small>SAP {selected.daka.externalId}</small><small>{selected.daka.inStock === false ? "Sin stock en última captura" : "Disponible en última captura"}</small><a href={selected.daka.url} target="_blank" rel="noreferrer">Abrir producto DAKA ↗</a></div><div><span className={`store-label ${source}-store`}>{competitor.name}</span><strong>{money.format(selected.competitor.price)}</strong>{selected.competitor.listPrice != null && selected.competitor.listPrice > selected.competitor.price && <small>Precio anterior {money.format(selected.competitor.listPrice)}</small>}<small>Ref. {selected.competitor.externalId}</small><small>{selected.competitor.inStock === false ? "No disponible" : selected.competitor.availableQuantity == null ? "Disponible" : `${selected.competitor.availableQuantity} unidades reportadas`}</small><a href={selected.competitor.url} target="_blank" rel="noreferrer">Abrir producto {competitor.name} ↗</a></div></div>
+          <div className={`competitive-conclusion ${selected.differenceUsd <= 0 ? "favorable" : "unfavorable"}`}><span>Lectura competitiva</span><strong>{positionLabel(selected, competitor.name)}</strong><p>{selected.differenceUsd === 0 ? "Ambas tiendas presentan el mismo precio." : `La brecha es de ${money.format(Math.abs(selected.differenceUsd))} (${Math.abs(selected.differencePct).toFixed(1)}%) respecto al precio de ${competitor.name}.`}</p></div>
+          <div className="comparison-meta"><div><span>Captura DAKA</span><b>{formatDate(selected.daka.scrapedAt)}</b></div><div><span>Captura {competitor.name}</span><b>{formatDate(selected.competitor.scrapedAt)}</b></div></div></> : <div className="empty-state detail-empty">Selecciona una comparación para revisar la equivalencia.</div>}
       </article>
     </section>
   </>;

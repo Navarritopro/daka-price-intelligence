@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "damasco";
-    const source = ["daka", "damasco"].includes(requestedSource) ? requestedSource : "damasco";
+    const source = ["daka", "damasco", "multimax"].includes(requestedSource) ? requestedSource : "damasco";
     const sql = getSql();
     const [summary] = await sql`
       WITH selected_source AS (

@@ -17,6 +17,10 @@ INSERT INTO sources (slug, name, base_url)
 VALUES ('damasco', 'Damasco', 'https://www.damascovzla.com')
 ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, base_url = EXCLUDED.base_url;
 
+INSERT INTO sources (slug, name, base_url)
+VALUES ('multimax', 'Multimax', 'https://multimax.com.ve')
+ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, base_url = EXCLUDED.base_url;
+
 CREATE TABLE IF NOT EXISTS scraping_jobs (
   id UUID PRIMARY KEY,
   source_id BIGINT NOT NULL REFERENCES sources(id),

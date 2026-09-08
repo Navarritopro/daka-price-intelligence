@@ -475,7 +475,7 @@ export default function Dashboard() {
           <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => setView("operations")}>Monitoreo técnico</button>
         </nav>
         <div className="header-actions">
-          <span className="next-run">Damasco diario · 09:07 AM VET</span>
+          <span className="next-run">Competidores · 09:07–09:20 AM VET</span>
           <button className="primary-button" onClick={triggerScrape} disabled={executionBusy}>{running ? "Iniciando…" : executionBusy ? "Ejecución pendiente" : "Actualizar datos ahora"}</button>
         </div>
       </header>
@@ -494,7 +494,7 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => setPriceTab("damasco")}>Catálogo Damasco</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => setPriceTab("competitors")}>Comparador</button></div>
+          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => setPriceTab("damasco")}>Catálogos competencia</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => setPriceTab("competitors")}>Comparador</button></div>
           {priceTab === "explore" ? <>
           <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Estado del producto" value={productStatus} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>Últimos 90 días</option></select></section>
 
@@ -528,7 +528,7 @@ export default function Dashboard() {
               </article>
             </section>
           </> : priceTab === "damasco" ? <DamascoCatalog/> : <CompetitorComparison/>}
-          <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage future">Próximos competidores</span></div></section>
+          <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco y Multimax</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage future">Próximos competidores</span></div></section>
         </main>
       ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} onTriggerDaka={triggerScrape}/>}
     </div>

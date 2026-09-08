@@ -27,18 +27,18 @@ function methodLabel(method: string) {
   return labels[method] ?? "Similitud del catálogo";
 }
 
-function ProductData({ product, store }: { product: ReviewProduct; store: "daka" | "damasco" }) {
+function ProductData({ product, store, competitorName }: { product: ReviewProduct; store: "daka" | "competitor"; competitorName: string }) {
   return <div className="review-product-panel">
-    <span className={`store-label ${store === "daka" ? "daka-store" : "damasco-store"}`}>{store === "daka" ? "DAKA" : "Damasco"}</span>
+    <span className={`store-label ${store === "daka" ? "daka-store" : "competitor-store"}`}>{store === "daka" ? "DAKA" : competitorName}</span>
     <h3>{product.name}</h3>
     <p>{store === "daka" ? "SAP" : "Ref."} {product.externalId}</p>
     <div className="review-product-data">{product.brand && <span>Marca: {product.brand}</span>}{product.model && <span>Modelo: {product.model}</span>}{product.category && <span>{product.category}</span>}</div>
     <strong>{product.price == null ? "Sin precio" : money.format(product.price)}</strong>
-    <a href={product.url} target="_blank" rel="noreferrer">Abrir ficha {store === "daka" ? "DAKA" : "Damasco"} ↗</a>
+    <a href={product.url} target="_blank" rel="noreferrer">Abrir ficha {store === "daka" ? "DAKA" : competitorName} ↗</a>
   </div>;
 }
 
-export default function MatchReview({ onBack, onDecision }: { onBack: () => void; onDecision: () => void }) {
+export default function MatchReview({ source, competitorName, onBack, onDecision }: { source: "damasco" | "multimax"; competitorName: string; onBack: () => void; onDecision: () => void }) {
   const [groups, setGroups] = useState<ReviewGroup[]>([]);
   const [totalProducts, setTotalProducts] = useState(0);
   const [totalAlternatives, setTotalAlternatives] = useState(0);
@@ -59,7 +59,7 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
 
   const load = useCallback(async (offset = 0) => {
     setLoading(offset === 0);
-    const params = new URLSearchParams({ search: debouncedSearch, limit: "15", offset: String(offset) });
+    const params = new URLSearchParams({ source, search: debouncedSearch, limit: "15", offset: String(offset) });
     try {
       const response = await fetch(`/api/matches?${params.toString()}`, { cache: "no-store" });
       const page = await response.json() as ReviewPage & { error?: string };
@@ -76,7 +76,7 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch]);
+  }, [debouncedSearch, source]);
 
   useEffect(() => { void load(0); }, [load]);
 
@@ -156,7 +156,7 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
   }
 
   return <section className="review-module">
-    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación · Motor V2.1</span><h2>Coincidencias agrupadas por producto</h2><p>Revisa un producto DAKA y elige solamente su alternativa equivalente en Damasco.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
+    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación · Motor V2.1</span><h2>Coincidencias agrupadas por producto</h2><p>Revisa un producto DAKA y elige solamente su alternativa equivalente en {competitorName}.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
     <div className="review-summary">
       <div><strong>{integer.format(totalProducts)}</strong><span>productos DAKA por validar</span></div>
       <div><strong>{integer.format(totalAlternatives)}</strong><span>alternativas analizadas</span></div>
@@ -166,10 +166,10 @@ export default function MatchReview({ onBack, onDecision }: { onBack: () => void
     <div className="review-safety-note">La selección rápida solo se habilita para la primera opción con ≥85% de confianza, marca y tipo confirmados, modelo compartido o al menos dos especificaciones coincidentes y sin conflictos.</div>
     {message && <div className="review-message" role="status">{message}</div>}
     {loading ? <div className="empty-state">Cargando productos pendientes…</div> : groups.length === 0 ? <div className="empty-state">No existen productos pendientes con esta búsqueda.</div> : <div className="review-group-list">{groups.map((group) => <article className="review-group" key={group.daka.id}>
-      <div className="review-group-daka"><div className="review-group-title"><span>Producto base</span><b>{group.candidates.length} alternativa{group.candidates.length === 1 ? "" : "s"} disponible{group.candidates.length === 1 ? "" : "s"}</b></div><ProductData product={group.daka} store="daka"/></div>
+      <div className="review-group-daka"><div className="review-group-title"><span>Producto base</span><b>{group.candidates.length} alternativa{group.candidates.length === 1 ? "" : "s"} disponible{group.candidates.length === 1 ? "" : "s"}</b></div><ProductData product={group.daka} store="daka" competitorName={competitorName}/></div>
       <div className="review-options">{group.candidates.map((candidate, index) => <div className={`review-option ${selected.has(candidate.matchId) ? "selected" : ""}`} key={candidate.matchId}>
         <div className="review-option-head"><div><strong>Opción {index + 1}</strong><span>{(candidate.confidence * 100).toFixed(0)}% de confianza</span></div>{candidate.bulkEligible && <label className="safe-selector"><input type="checkbox" checked={selected.has(candidate.matchId)} onChange={() => toggle(group, candidate)}/> Alta confianza</label>}</div>
-        <ProductData product={candidate.competitor} store="damasco"/>
+        <ProductData product={candidate.competitor} store="competitor" competitorName={competitorName}/>
         <div className="review-evidence"><span>Coincidencias detectadas</span><div>{candidate.evidence.brand && <b>Marca: {candidate.evidence.brand}</b>}{candidate.evidence.productType && <b>Tipo: {candidate.evidence.productType.replaceAll("_", " ")}</b>}{candidate.evidence.sharedModels?.map((value) => <b key={value}>Modelo: {value}</b>)}{candidate.evidence.sharedAttributes?.map((value) => <b key={value}>{describeAttribute(value)}</b>)}</div></div>
         <div className="review-method"><b>{methodLabel(candidate.matchMethod)}</b>{candidate.evidence.engineVersion && <span>Motor V{candidate.evidence.engineVersion}</span>}</div>
         {!!candidate.evidence.variantNotes?.length && <div className="review-variant-notes">{candidate.evidence.variantNotes.map((note) => <span key={note}>{note}. El color se informa, pero no invalida el producto base.</span>)}</div>}

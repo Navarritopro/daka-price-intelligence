@@ -13,7 +13,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from database import Database
-from matching import infer_brand, model_tokens, refresh_damasco_matches
+from matching import infer_brand, model_tokens, refresh_all_matches
 from notifications import build_messages, send_email, send_telegram
 from utils import extract_sap, parse_price
 
@@ -240,14 +240,11 @@ def main() -> int:
             database.update_alert_channels([row["id"] for row in alerts], emailed, telegram_sent)
         scraper.log(f"Histórico guardado: {saved} productos; alertas: {len(alerts)}", "ok")
         try:
-            scraper.log("Actualizando homologación competitiva con Damasco")
-            matching = refresh_damasco_matches(database_url)
-            scraper.log(
-                f"Homologación actualizada: {matching['automatic']} automáticas · "
-                f"{matching['review']} candidatos por validar · "
-                f"{matching['confirmed']} confirmadas",
-                "ok",
-            )
+            scraper.log("Actualizando homologaciones con todas las competencias")
+            matching = refresh_all_matches(database_url)
+            automatic = sum(int(result["automatic"]) for result in matching.values())
+            review = sum(int(result["review"]) for result in matching.values())
+            scraper.log(f"Homologaciones actualizadas: {automatic} automáticas · {review} alternativas por validar", "ok")
         except Exception as matching_error:
             scraper.log(
                 f"El catálogo se guardó, pero no se pudo recalcular la homologación: "
