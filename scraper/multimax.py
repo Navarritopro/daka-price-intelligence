@@ -232,6 +232,12 @@ def main() -> int:
     if trigger_type not in {"scheduled", "manual", "local"}:
         trigger_type = "scheduled"
     database = Database(database_url, source_slug="multimax")
+    if trigger_type == "scheduled" and database.has_successful_job_today():
+        print(
+            "[OMITIDO] Multimax ya tiene una captura exitosa de hoy en hora de Venezuela.",
+            flush=True,
+        )
+        return 0
     job_id = database.create_job(trigger_type)
     scraper = MultimaxScraper(progress_callback=lambda found, pages, logs: database.update_job_progress(
         job_id, products_found=found, pages_scanned=pages, logs=logs

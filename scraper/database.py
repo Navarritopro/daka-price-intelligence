@@ -29,6 +29,26 @@ class Database:
             )
         return job_id
 
+    def has_successful_job_today(self) -> bool:
+        """Return whether this source already has a successful VET-day capture."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM scraping_jobs j
+                  JOIN sources s ON s.id = j.source_id
+                  WHERE s.slug = %s
+                    AND j.status = 'success'
+                    AND (COALESCE(j.finished_at, j.started_at)
+                         AT TIME ZONE 'America/Caracas')::date
+                        = (NOW() AT TIME ZONE 'America/Caracas')::date
+                ) AS found
+                """,
+                (self.source_slug,),
+            ).fetchone()
+        return bool(row and row["found"])
+
     def update_job_progress(self, job_id: str, *, products_found: int,
                             pages_scanned: int, logs: list[dict],
                             products_saved: int | None = None) -> None:

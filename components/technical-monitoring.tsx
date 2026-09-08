@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { JobSummary, MonitoringSourceSummary } from "@/lib/types";
 
 type MonitoringSource = "all" | "daka" | "damasco" | "multimax";
@@ -22,6 +22,14 @@ type Health = {
   dropPercent: number | null;
 };
 
+type SourceSchedule = {
+  time: string;
+  mode: string;
+  primaryMinute: number;
+  backupMinutes: number[];
+  backupLabels: string[];
+};
+
 const integer = new Intl.NumberFormat("es-VE");
 const vetDate = new Intl.DateTimeFormat("es-VE", {
   timeZone: "America/Caracas",
@@ -31,6 +39,15 @@ const vetDate = new Intl.DateTimeFormat("es-VE", {
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit"
+});
+const vetClock = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Caracas",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
 });
 
 function formatDate(value: string | null | undefined) {
@@ -48,13 +65,34 @@ function formatDuration(seconds: number | null | undefined) {
     : `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
-function sourceSchedule(source: string) {
-  if (source === "damasco") return { time: "09:07 a. m. VET", mode: "GitHub Actions · todos los días" };
-  if (source === "multimax") return { time: "09:20 a. m. VET", mode: "GitHub Actions · todos los días" };
-  return { time: "09:00 a. m. VET", mode: "Equipo local · temporal" };
+function sourceSchedule(source: string): SourceSchedule {
+  if (source === "damasco") return {
+    time: "09:07 a. m. VET",
+    mode: "GitHub Actions · principal + 2 respaldos",
+    primaryMinute: 9 * 60 + 7,
+    backupMinutes: [11 * 60 + 7, 13 * 60 + 7],
+    backupLabels: ["11:07 a. m.", "1:07 p. m."]
+  };
+  if (source === "multimax") return {
+    time: "09:20 a. m. VET",
+    mode: "GitHub Actions · principal + 2 respaldos",
+    primaryMinute: 9 * 60 + 20,
+    backupMinutes: [11 * 60 + 20, 13 * 60 + 20],
+    backupLabels: ["11:20 a. m.", "1:20 p. m."]
+  };
+  return { time: "09:00 a. m. VET", mode: "Equipo local · temporal", primaryMinute: 9 * 60, backupMinutes: [], backupLabels: [] };
 }
 
-function getHealth(source: MonitoringSourceSummary, jobs: JobSummary[]): Health {
+function vetParts(value: number | string) {
+  const parts = vetClock.formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "0";
+  return {
+    dateKey: `${part("year")}-${part("month")}-${part("day")}`,
+    minute: Number(part("hour")) * 60 + Number(part("minute"))
+  };
+}
+
+function getHealth(source: MonitoringSourceSummary, jobs: JobSummary[], now: number): Health {
   const sourceJobs = jobs.filter((job) => job.source === source.source);
   const latest = sourceJobs[0] ?? null;
   const successful = sourceJobs.filter((job) => job.status === "success");
@@ -80,7 +118,20 @@ function getHealth(source: MonitoringSourceSummary, jobs: JobSummary[]): Health 
   if (latest?.status === "failed" && new Date(latest.startedAt) > new Date(latestSuccess.startedAt)) {
     return { level: "failed", label: "Última ejecución fallida", detail: latest.errorMessage ?? "Revise el registro de actividad", latest, latestSuccess, dropPercent };
   }
-  const ageHours = (Date.now() - new Date(latestSuccess.finishedAt ?? latestSuccess.startedAt).getTime()) / 3_600_000;
+  const schedule = sourceSchedule(source.source);
+  const currentVet = vetParts(now);
+  const latestSuccessVet = vetParts(latestSuccess.finishedAt ?? latestSuccess.startedAt);
+  const hasSuccessToday = currentVet.dateKey === latestSuccessVet.dateKey;
+  const competitor = source.source === "damasco" || source.source === "multimax";
+  const graceMinutes = 45;
+  if (competitor && !hasSuccessToday && currentVet.minute >= schedule.primaryMinute + graceMinutes) {
+    const nextBackup = schedule.backupMinutes.findIndex((minute) => currentVet.minute < minute);
+    const detail = nextBackup >= 0
+      ? `GitHub aún no ha completado la captura de hoy. Próximo respaldo: ${schedule.backupLabels[nextBackup]} VET`
+      : "No existe una captura exitosa de hoy después de los tres horarios programados";
+    return { level: "warning", label: "Pendiente de hoy", detail, latest, latestSuccess, dropPercent };
+  }
+  const ageHours = (now - new Date(latestSuccess.finishedAt ?? latestSuccess.startedAt).getTime()) / 3_600_000;
   if (ageHours > 30) {
     return { level: "warning", label: "Captura atrasada", detail: `Último éxito hace ${Math.floor(ageHours)} horas`, latest, latestSuccess, dropPercent };
   }
@@ -117,13 +168,18 @@ export default function TechnicalMonitoring({
   onTriggerDaka: () => void;
 }) {
   const [selectedSource, setSelectedSource] = useState<MonitoringSource>("all");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const selectedJobs = useMemo(
     () => selectedSource === "all" ? jobs : jobs.filter((job) => job.source === selectedSource),
     [jobs, selectedSource]
   );
   const sourceHealth = useMemo(
-    () => sources.map((source) => ({ source, health: getHealth(source, jobs) })),
-    [jobs, sources]
+    () => sources.map((source) => ({ source, health: getHealth(source, jobs, now) })),
+    [jobs, now, sources]
   );
   const selectedSummary = sources.find((source) => source.source === selectedSource) ?? null;
   const latestJob = selectedJobs[0] ?? null;
@@ -139,7 +195,7 @@ export default function TechnicalMonitoring({
   const requestWaiting = selectedSource === "daka" && latestRequest?.status === "queued";
   const requestPreparing = selectedSource === "daka" && latestRequest?.status === "running" && latestJob?.status !== "running";
   const executionBusy = running || requestWaiting || requestPreparing || (selectedSource === "daka" && latestJob?.status === "running");
-  const selectedHealth = selectedSummary ? getHealth(selectedSummary, jobs) : null;
+  const selectedHealth = selectedSummary ? getHealth(selectedSummary, jobs, now) : null;
   const schedule = selectedSource === "all" ? null : sourceSchedule(selectedSource);
   const isDamasco = selectedSource === "damasco";
   const isCompetitor = selectedSource !== "daka" && selectedSource !== "all";
