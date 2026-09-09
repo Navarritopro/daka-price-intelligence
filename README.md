@@ -1,6 +1,6 @@
 # DAKA Price Lab
 
-Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el catálogo de DAKA, conserva el histórico en USD y compara productos homologados con Damasco, Multimax e IVOO.
+Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el catálogo de DAKA, conserva el histórico en USD y compara productos homologados con Damasco, Multimax, IVOO y Venelectronics.
 
 ## Alcance de la Fase 1
 
@@ -167,3 +167,22 @@ no se mezclan cuotas ni modalidades de financiamiento.
 El intento principal se programa a las **9:33 a. m. VET** y los respaldos a las
 **11:33 a. m.** y **1:33 p. m.**. Los respaldos se omiten si ya existe una captura
 exitosa de IVOO durante ese día en Venezuela.
+
+## Fase 5: Venelectronics
+
+Venelectronics se integra desde la API pública Store de WooCommerce. `prices.price`
+es el precio final visible en USD; `prices.regular_price` se conserva como precio lista
+solo cuando es mayor. El proceso detecta el desafío anti-bot de SiteGround y cancela
+sin guardar productos parciales.
+
+Despliegue controlado:
+
+1. Publicar los archivos de la fase 5.
+2. Ejecutar **Probar conectividad Venelectronics**. Consulta una página y no escribe en Neon.
+3. Si la prueba termina en verde, ejecutar `db/phase5_venelectronics.sql` una sola vez en Neon.
+4. Ejecutar manualmente **Scraping diario Venelectronics** para crear la primera captura.
+5. Validar catálogo, precios, monitoreo, comparador y candidatos de homologación.
+6. Crear la variable de GitHub Actions `VENELECTRONICS_ENABLED=true`.
+
+Los horarios son 9:46 a. m., 11:46 a. m. y 1:46 p. m. VET. Los respaldos se
+omiten automáticamente cuando ya existe una captura exitosa del día.

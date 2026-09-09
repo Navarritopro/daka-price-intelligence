@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import damasco
 import ivoo
 import multimax
+import venelectronics
 
 
 class DailyCaptureGuardTests(unittest.TestCase):
@@ -33,6 +34,13 @@ class DailyCaptureGuardTests(unittest.TestCase):
         database_class.return_value.has_successful_job_today.return_value = True
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://test", "TRIGGER_TYPE": "scheduled"}):
             self.assertEqual(ivoo.main(), 0)
+        database_class.return_value.create_job.assert_not_called()
+
+    @patch("venelectronics.Database")
+    def test_venelectronics_scheduled_backup_skips_existing_daily_success(self, database_class):
+        database_class.return_value.has_successful_job_today.return_value = True
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://test", "TRIGGER_TYPE": "scheduled"}):
+            self.assertEqual(venelectronics.main(), 0)
         database_class.return_value.create_job.assert_not_called()
 
 

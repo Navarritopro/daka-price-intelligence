@@ -41,7 +41,7 @@ export async function GET() {
         WHERE s.active = TRUE
         GROUP BY s.id, s.slug, s.name, s.base_url
         ORDER BY CASE s.slug
-          WHEN 'daka' THEN 1 WHEN 'damasco' THEN 2 WHEN 'multimax' THEN 3 WHEN 'ivoo' THEN 4
+          WHEN 'daka' THEN 1 WHEN 'damasco' THEN 2 WHEN 'multimax' THEN 3 WHEN 'ivoo' THEN 4 WHEN 'venelectronics' THEN 5
           ELSE 99 END, s.slug
       `,
       sql`

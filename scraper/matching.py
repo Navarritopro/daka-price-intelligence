@@ -37,6 +37,7 @@ KNOWN_BRANDS = tuple(sorted({
     "tp link", "tp-link", "tplink", "d link", "d-link", "dlink", "mercusys",
     "tenda", "linksys", "ubiquiti", "mikrotik", "netis", "zte",
     "soneview", "aiwa", "hyundai", "sankey", "nisato", "pixela", "regency",
+    "syon", "omega", "lebait",
     "hp", "lg", "jbl", "rca", "acer", "asus", "epson",
 }, key=len, reverse=True))
 

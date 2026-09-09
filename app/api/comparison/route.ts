@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "damasco";
-    const source = ["damasco", "multimax", "ivoo"].includes(requestedSource) ? requestedSource : "damasco";
+    const source = ["damasco", "multimax", "ivoo", "venelectronics"].includes(requestedSource) ? requestedSource : "damasco";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
     const requestedPosition = request.nextUrl.searchParams.get("position") ?? "all";

@@ -36,7 +36,7 @@ export type DashboardData = {
 
 export type JobSummary = {
   id: string;
-  source: "daka" | "damasco" | "multimax" | "ivoo";
+  source: "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics";
   sourceName: string;
   triggerType: string;
   status: string;
@@ -52,7 +52,7 @@ export type JobSummary = {
 };
 
 export type MonitoringSourceSummary = {
-  source: "daka" | "damasco" | "multimax" | "ivoo";
+  source: "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics";
   sourceName: string;
   baseUrl: string;
   currentProducts: number;

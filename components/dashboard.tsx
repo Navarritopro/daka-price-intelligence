@@ -528,7 +528,7 @@ export default function Dashboard() {
               </article>
             </section>
           </> : priceTab === "damasco" ? <DamascoCatalog/> : <CompetitorComparison/>}
-          <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax e IVOO</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage future">Próximos competidores</span></div></section>
+          <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax, IVOO y Venelectronics</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage">Fase 5 · Venelectronics</span></div></section>
         </main>
       ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} onTriggerDaka={triggerScrape}/>}
     </div>

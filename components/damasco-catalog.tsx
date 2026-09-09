@@ -34,11 +34,12 @@ type Summary = {
 
 const BATCH_SIZE = 50;
 const LOAD_THRESHOLD = 420;
-type CompetitorSource = "damasco" | "multimax" | "ivoo";
+type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics";
 const SOURCES: Record<CompetitorSource, { name: string; short: string }> = {
   damasco: { name: "Damasco", short: "D" },
   multimax: { name: "Multimax", short: "MM" },
   ivoo: { name: "IVOO", short: "IV" },
+  venelectronics: { name: "Venelectronics", short: "VE" },
 };
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
