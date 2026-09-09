@@ -1,0 +1,49 @@
+name: Scraping diario IVOO
+
+on:
+  schedule:
+    # 09:33 a. m. VET y respaldos condicionales a las 11:33 y 01:33 p. m.
+    - cron: "33 13 * * *"
+    - cron: "33 15 * * *"
+    - cron: "33 17 * * *"
+  workflow_dispatch:
+    inputs:
+      trigger_type:
+        description: Origen de la ejecución
+        required: false
+        default: manual
+        type: choice
+        options: [manual, local]
+
+concurrency:
+  group: ivoo-price-scraper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    # El horario queda en pausa durante el despliegue inicial. La ejecución
+    # manual sigue disponible para validar antes de activar la automatización.
+    if: github.event_name == 'workflow_dispatch' || vars.IVOO_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      TRIGGER_TYPE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.trigger_type || 'manual' }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+      - name: Instalar dependencias
+        run: pip install -r scraper/requirements.txt
+      - name: Ejecutar pruebas
+        run: python -m unittest discover -s scraper/tests -p "test_*.py"
+      - name: Extraer IVOO y actualizar homologación
+        run: python scraper/ivoo.py
