@@ -34,6 +34,12 @@ type Summary = {
 
 const BATCH_SIZE = 50;
 const LOAD_THRESHOLD = 420;
+type CompetitorSource = "damasco" | "multimax" | "ivoo";
+const SOURCES: Record<CompetitorSource, { name: string; short: string }> = {
+  damasco: { name: "Damasco", short: "D" },
+  multimax: { name: "Multimax", short: "MM" },
+  ivoo: { name: "IVOO", short: "IV" },
+};
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
 const vetDate = new Intl.DateTimeFormat("es-VE", {
@@ -64,9 +70,8 @@ function chartPath(points: PricePoint[]) {
 }
 
 export default function DamascoCatalog() {
-  const [source, setSource] = useState<"damasco" | "multimax">("damasco");
-  const sourceName = source === "damasco" ? "Damasco" : "Multimax";
-  const sourceShort = source === "damasco" ? "D" : "MM";
+  const [source, setSource] = useState<CompetitorSource>("damasco");
+  const { name: sourceName, short: sourceShort } = SOURCES[source];
   const [tab, setTab] = useState<CatalogTab>("explore");
   const [summary, setSummary] = useState<Summary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -273,7 +278,7 @@ export default function DamascoCatalog() {
   const selectedChange = changeProducts.find((product) => product.id === selected?.id) ?? null;
 
   return <section className="damasco-catalog">
-    <nav className="competitor-source-tabs" aria-label="Catálogo competidor"><button className={source === "damasco" ? "active" : ""} onClick={() => setSource("damasco")}>Damasco</button><button className={source === "multimax" ? "active" : ""} onClick={() => setSource("multimax")}>Multimax</button></nav>
+    <nav className="competitor-source-tabs" aria-label="Catálogo competidor">{(Object.entries(SOURCES) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={source === slug ? "active" : ""} onClick={() => { setSource(slug); setCategory(""); }}>{item.name}</button>)}</nav>
     <div className="damasco-catalog-head"><div><span className="eyebrow-dark">Inteligencia competitiva · Catálogo completo</span><h2>Productos e histórico de {sourceName}</h2><p>Consulta todo el catálogo scrapeado aunque el producto todavía no esté homologado con DAKA.</p></div><div><span>Última captura</span><strong>{formatDate(summary?.lastScrapeAt)}</strong></div></div>
     {summaryError && <div className="error-banner"><strong>Resumen pendiente</strong><span>{summaryError}</span></div>}
     <div className="damasco-summary">

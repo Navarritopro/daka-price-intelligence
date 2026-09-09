@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JobSummary, MonitoringSourceSummary } from "@/lib/types";
 
-type MonitoringSource = "all" | "daka" | "damasco" | "multimax";
+type MonitoringSource = "all" | "daka" | "damasco" | "multimax" | "ivoo";
 type ScrapeRequest = {
   id: string;
   status: "queued" | "running" | "success" | "failed";
@@ -80,6 +80,13 @@ function sourceSchedule(source: string): SourceSchedule {
     backupMinutes: [11 * 60 + 20, 13 * 60 + 20],
     backupLabels: ["11:20 a. m.", "1:20 p. m."]
   };
+  if (source === "ivoo") return {
+    time: "09:33 a. m. VET",
+    mode: "GitHub Actions · principal + 2 respaldos",
+    primaryMinute: 9 * 60 + 33,
+    backupMinutes: [11 * 60 + 33, 13 * 60 + 33],
+    backupLabels: ["11:33 a. m.", "1:33 p. m."]
+  };
   return { time: "09:00 a. m. VET", mode: "Equipo local · temporal", primaryMinute: 9 * 60, backupMinutes: [], backupLabels: [] };
 }
 
@@ -122,7 +129,7 @@ function getHealth(source: MonitoringSourceSummary, jobs: JobSummary[], now: num
   const currentVet = vetParts(now);
   const latestSuccessVet = vetParts(latestSuccess.finishedAt ?? latestSuccess.startedAt);
   const hasSuccessToday = currentVet.dateKey === latestSuccessVet.dateKey;
-  const competitor = source.source === "damasco" || source.source === "multimax";
+  const competitor = source.source !== "daka";
   const graceMinutes = 45;
   if (competitor && !hasSuccessToday && currentVet.minute >= schedule.primaryMinute + graceMinutes) {
     const nextBackup = schedule.backupMinutes.findIndex((minute) => currentVet.minute < minute);
@@ -151,6 +158,7 @@ function statusText(status: string) {
 function sourceName(source: string) {
   if (source === "damasco") return "Damasco";
   if (source === "multimax") return "Multimax";
+  if (source === "ivoo") return "IVOO";
   return "DAKA";
 }
 
@@ -185,8 +193,12 @@ export default function TechnicalMonitoring({
   const latestJob = selectedJobs[0] ?? null;
   const sourceSuccesses = selectedJobs.filter((job) => job.status === "success");
   const previousSuccess = sourceSuccesses[1] ?? sourceSuccesses[0] ?? null;
-  const expectedPages = previousSuccess?.pagesScanned ?? (selectedSource === "damasco" ? 25 : selectedSource === "multimax" ? 60 : 138);
-  const expectedProducts = previousSuccess?.productsFound ?? selectedSummary?.currentProducts ?? (selectedSource === "damasco" ? 1220 : selectedSource === "multimax" ? 2963 : 2205);
+  const expectedDefaults = selectedSource === "damasco" ? { pages: 25, products: 1220 }
+    : selectedSource === "multimax" ? { pages: 60, products: 2963 }
+    : selectedSource === "ivoo" ? { pages: 80, products: 3500 }
+    : { pages: 138, products: 2205 };
+  const expectedPages = previousSuccess?.pagesScanned ?? expectedDefaults.pages;
+  const expectedProducts = previousSuccess?.productsFound ?? selectedSummary?.currentProducts ?? expectedDefaults.products;
   const progressPercent = latestJob?.status === "success" ? 100 : latestJob?.status === "running"
     ? latestJob.productsSaved > 0
       ? Math.min(99, Math.round(80 + (latestJob.productsSaved / Math.max(expectedProducts, 1)) * 19))
@@ -225,6 +237,7 @@ export default function TechnicalMonitoring({
         <button className={selectedSource === "daka" ? "active" : ""} onClick={() => setSelectedSource("daka")}>DAKA</button>
         <button className={selectedSource === "damasco" ? "active" : ""} onClick={() => setSelectedSource("damasco")}>Damasco</button>
         <button className={selectedSource === "multimax" ? "active" : ""} onClick={() => setSelectedSource("multimax")}>Multimax</button>
+        <button className={selectedSource === "ivoo" ? "active" : ""} onClick={() => setSelectedSource("ivoo")}>IVOO</button>
       </nav>
 
       {selectedSource === "all" ? (
@@ -238,7 +251,7 @@ export default function TechnicalMonitoring({
               const capturedChange = latestSuccess && previous ? latestSuccess.productsFound - previous.productsFound : null;
               return (
                 <button key={source.source} className={`source-health-card ${health.level}`} onClick={() => setSelectedSource(source.source)}>
-                  <div className="source-health-head"><div><span className={`monitor-source-badge ${source.source}`}>{source.source === "daka" ? "D" : source.source === "damasco" ? "DM" : "MM"}</span><strong>{source.sourceName}</strong></div><span className={`health-pill ${health.level}`}>{health.label}</span></div>
+                  <div className="source-health-head"><div><span className={`monitor-source-badge ${source.source}`}>{source.source === "daka" ? "D" : source.source === "damasco" ? "DM" : source.source === "multimax" ? "MM" : "IV"}</span><strong>{source.sourceName}</strong></div><span className={`health-pill ${health.level}`}>{health.label}</span></div>
                   <div className="source-health-primary"><span>Última captura exitosa</span><b>{formatDate(health.latestSuccess?.finishedAt ?? health.latestSuccess?.startedAt)}</b></div>
                   <div className="source-health-metrics"><div><span>Productos</span><b>{integer.format(source.currentProducts)}</b></div><div><span>Duración</span><b>{formatDuration(health.latestSuccess?.durationSeconds)}</b></div><div><span>Variación catálogo</span><b className={capturedChange != null && capturedChange < 0 ? "metric-warning" : ""}>{capturedChange == null ? "—" : `${capturedChange > 0 ? "+" : ""}${integer.format(capturedChange)}`}</b></div></div>
                   <p>{health.detail}</p>

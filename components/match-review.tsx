@@ -38,7 +38,7 @@ function ProductData({ product, store, competitorName }: { product: ReviewProduc
   </div>;
 }
 
-export default function MatchReview({ source, competitorName, onBack, onDecision }: { source: "damasco" | "multimax"; competitorName: string; onBack: () => void; onDecision: () => void }) {
+export default function MatchReview({ source, competitorName, onBack, onDecision }: { source: "damasco" | "multimax" | "ivoo"; competitorName: string; onBack: () => void; onDecision: () => void }) {
   const [groups, setGroups] = useState<ReviewGroup[]>([]);
   const [totalProducts, setTotalProducts] = useState(0);
   const [totalAlternatives, setTotalAlternatives] = useState(0);

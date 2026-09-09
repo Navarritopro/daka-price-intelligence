@@ -1,6 +1,6 @@
 # DAKA Price Lab
 
-Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el catálogo de `tiendasdaka.com`, conserva el histórico en USD y compara productos homologados con Damasco.
+Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el catálogo de DAKA, conserva el histórico en USD y compara productos homologados con Damasco, Multimax e IVOO.
 
 ## Alcance de la Fase 1
 
@@ -150,3 +150,20 @@ La primera integración competitiva incorpora Damasco mediante su catálogo púb
 4. Abrir la pestaña **Competidores** del dashboard.
 
 La homologación automática exige una confianza mínima de 90%. Las coincidencias dudosas quedan en estado `review` y no se presentan como equivalencias hasta ser validadas. Cada fuente conserva su propio producto, job, precio, stock e histórico.
+
+## Fase 4: IVOO
+
+IVOO se integra desde su catálogo público GraphQL. El precio almacenado proviene de
+`price.regularPrice.amount.value`, el mismo valor USD que presenta la ficha pública;
+no se mezclan cuotas ni modalidades de financiamiento.
+
+1. Publicar los archivos de la integración.
+2. Ejecutar **Probar conectividad IVOO**. Consulta solo una página y no escribe en Neon.
+3. Si la prueba termina en verde, ejecutar `db/phase4_ivoo.sql` una sola vez en Neon.
+4. Ejecutar manualmente **Scraping diario IVOO** para crear la primera captura.
+5. Verificar IVOO en catálogo, monitoreo, comparador y revisión de homologaciones.
+6. Crear en GitHub Actions la variable `IVOO_ENABLED=true` para habilitar los horarios automáticos.
+
+El intento principal se programa a las **9:33 a. m. VET** y los respaldos a las
+**11:33 a. m.** y **1:33 p. m.**. Los respaldos se omiten si ya existe una captura
+exitosa de IVOO durante ese día en Venezuela.

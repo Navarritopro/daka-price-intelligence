@@ -40,7 +40,9 @@ export async function GET() {
         LEFT JOIN price_history ph ON ph.job_id = ls.id
         WHERE s.active = TRUE
         GROUP BY s.id, s.slug, s.name, s.base_url
-        ORDER BY s.slug
+        ORDER BY CASE s.slug
+          WHEN 'daka' THEN 1 WHEN 'damasco' THEN 2 WHEN 'multimax' THEN 3 WHEN 'ivoo' THEN 4
+          ELSE 99 END, s.slug
       `,
       sql`
         SELECT s.slug AS source_slug, pm.status, COUNT(*)::int AS total

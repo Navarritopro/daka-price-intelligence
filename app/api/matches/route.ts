@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "damasco";
-    const source = ["damasco", "multimax"].includes(requestedSource) ? requestedSource : "damasco";
+    const source = ["damasco", "multimax", "ivoo"].includes(requestedSource) ? requestedSource : "damasco";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const searchLike = `%${search}%`;
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 15, 1), 25);
