@@ -1,0 +1,27 @@
+name: Probar conectividad Venelectronics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+      - name: Instalar dependencias
+        run: pip install -r scraper/requirements.txt
+      - name: Ejecutar pruebas de Venelectronics
+        run: python -m unittest scraper.tests.test_venelectronics
+      - name: Consultar una página pública sin escribir en Neon
+        run: python scraper/diagnose_venelectronics.py

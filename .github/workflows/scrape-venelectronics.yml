@@ -1,0 +1,47 @@
+name: Scraping diario Venelectronics
+
+on:
+  schedule:
+    # 09:46 a. m. VET y respaldos condicionales a las 11:46 y 01:46 p. m.
+    - cron: "46 13 * * *"
+    - cron: "46 15 * * *"
+    - cron: "46 17 * * *"
+  workflow_dispatch:
+    inputs:
+      trigger_type:
+        description: Origen de la ejecución
+        required: false
+        default: manual
+        type: choice
+        options: [manual, local]
+
+concurrency:
+  group: venelectronics-price-scraper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    if: github.event_name == 'workflow_dispatch' || vars.VENELECTRONICS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      TRIGGER_TYPE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.trigger_type || 'manual' }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+      - name: Instalar dependencias
+        run: pip install -r scraper/requirements.txt
+      - name: Ejecutar pruebas
+        run: python -m unittest discover -s scraper/tests -p "test_*.py"
+      - name: Extraer Venelectronics y actualizar homologación
+        run: python scraper/venelectronics.py
