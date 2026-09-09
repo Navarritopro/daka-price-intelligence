@@ -41,6 +41,8 @@ class DamascoScraper:
         self.batch_size = 50
         self.delay = float(os.getenv("DAMASCO_DELAY_SECONDS", "0.25"))
         self.timeout = int(os.getenv("DAMASCO_TIMEOUT_SECONDS", "45"))
+        self.retry_attempts = max(1, int(os.getenv("DAMASCO_RETRY_ATTEMPTS", "3")))
+        self.retry_base_seconds = float(os.getenv("DAMASCO_RETRY_BASE_SECONDS", "3"))
         self.max_products = int(os.getenv("DAMASCO_MAX_PRODUCTS", "5000"))
         self.logs: list[dict] = []
         self.pages_scanned = 0
@@ -81,6 +83,39 @@ class DamascoScraper:
             return None
         return Decimal(str(value)).quantize(Decimal("0.01"))
 
+    def fetch_block(self, start: int, end: int):
+        """Fetch one VTEX range, retrying transient HTTP/server failures."""
+        last_error: Exception | None = None
+        for attempt in range(1, self.retry_attempts + 1):
+            try:
+                response = self.session.get(
+                    API_URL,
+                    params={"_from": start, "_to": end},
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, list):
+                    raise RuntimeError("Damasco devolvió un bloque con formato inesperado")
+                return response, payload
+            except (requests.RequestException, ValueError, RuntimeError) as exc:
+                last_error = exc
+                if attempt >= self.retry_attempts:
+                    break
+                wait_seconds = self.retry_base_seconds * attempt
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                detail = f"HTTP {status}" if status else type(exc).__name__
+                self.log(
+                    f"Bloque {start}-{end}: {detail}; reintento "
+                    f"{attempt + 1}/{self.retry_attempts} en {wait_seconds:g} s",
+                    "warning",
+                )
+                time.sleep(wait_seconds)
+        raise RuntimeError(
+            f"No fue posible consultar el bloque {start}-{end} después de "
+            f"{self.retry_attempts} intentos: {last_error}"
+        ) from last_error
+
     def run(self) -> list[Product]:
         unique: dict[str, Product] = {}
         start = 0
@@ -88,13 +123,7 @@ class DamascoScraper:
         self.log("Iniciando extracción del catálogo público de Damasco")
         while start < self.max_products and (total is None or start < total):
             end = start + self.batch_size - 1
-            response = self.session.get(
-                API_URL,
-                params={"_from": start, "_to": end},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            raw_products = response.json()
+            response, raw_products = self.fetch_block(start, end)
             content_range = response.headers.get("resources", "")
             match = re.search(r"/(\d+)$", content_range)
             if match:
