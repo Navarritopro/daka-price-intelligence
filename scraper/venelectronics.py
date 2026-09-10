@@ -53,10 +53,14 @@ class Product:
 class VenelectronicsScraper:
     def __init__(self, progress_callback=None):
         self.page_size = min(max(int(os.getenv("VENELECTRONICS_PAGE_SIZE", "100")), 1), 100)
-        self.delay = float(os.getenv("VENELECTRONICS_DELAY_SECONDS", "0.35"))
+        self.delay = max(0, float(os.getenv("VENELECTRONICS_DELAY_SECONDS", "10")))
         self.timeout = int(os.getenv("VENELECTRONICS_TIMEOUT_SECONDS", "60"))
         self.max_pages = int(os.getenv("VENELECTRONICS_MAX_PAGES", "100"))
         self.retry_attempts = max(1, int(os.getenv("VENELECTRONICS_RETRY_ATTEMPTS", "3")))
+        self.challenge_base_seconds = max(
+            0,
+            float(os.getenv("VENELECTRONICS_CHALLENGE_BASE_SECONDS", "20")),
+        )
         self.logs: list[dict] = []
         self.pages_scanned = 0
         self.progress_callback = progress_callback
@@ -141,11 +145,16 @@ class VenelectronicsScraper:
                 return payload, total_pages
             except (requests.RequestException, ValueError, RuntimeError) as exc:
                 last_error = exc
-                if "anti-bot" in str(exc):
-                    break
                 if attempt < self.retry_attempts:
-                    self.log(f"Página {page}: reintento {attempt + 1}/{self.retry_attempts}", "warning")
-                    time.sleep(attempt * 2)
+                    is_challenge = "anti-bot" in str(exc)
+                    wait_seconds = self.challenge_base_seconds * attempt if is_challenge else attempt * 2
+                    reason = "verificación temporal" if is_challenge else "error temporal"
+                    self.log(
+                        f"Página {page}: {reason}; reintento {attempt + 1}/{self.retry_attempts} "
+                        f"en {wait_seconds:g} s",
+                        "warning",
+                    )
+                    time.sleep(wait_seconds)
         raise RuntimeError(f"No fue posible consultar la página {page}: {last_error}") from last_error
 
     def parse_product(self, raw: dict, captured_at: datetime) -> Product | None:

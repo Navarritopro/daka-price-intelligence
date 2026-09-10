@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from venelectronics import VenelectronicsScraper
@@ -60,6 +61,42 @@ class VenelectronicsScraperTests(unittest.TestCase):
             headers = {"content-type": "text/html", "sg-captcha": "challenge"}
             text = '<meta http-equiv="refresh" content="/.well-known/sgcaptcha/">'
         self.assertTrue(self.scraper._challenge(Response()))
+
+    @patch("venelectronics.time.sleep")
+    def test_retries_same_page_after_temporary_antibot_challenge(self, sleep):
+        class Response:
+            def __init__(self, status_code, headers, payload=None, text=""):
+                self.status_code = status_code
+                self.headers = headers
+                self._payload = payload
+                self.text = text
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return self._payload
+
+        challenge = Response(
+            202,
+            {"content-type": "text/html", "sg-captcha": "challenge"},
+            text='<meta http-equiv="refresh" content="/.well-known/sgcaptcha/">',
+        )
+        recovered = Response(
+            200,
+            {"content-type": "application/json", "X-WP-TotalPages": "7"},
+            payload=[{"id": 7004, "name": "Producto recuperado"}],
+        )
+        self.scraper.retry_attempts = 3
+        self.scraper.challenge_base_seconds = 20
+        self.scraper.session.get = unittest.mock.Mock(side_effect=[challenge, recovered])
+
+        products, total_pages = self.scraper.fetch_page(2)
+
+        self.assertEqual(len(products), 1)
+        self.assertEqual(total_pages, 7)
+        self.assertEqual(self.scraper.session.get.call_count, 2)
+        sleep.assert_called_once_with(20)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ from venelectronics import VenelectronicsScraper
 
 
 def main() -> int:
-    products = VenelectronicsScraper().run(sample_pages=1)
+    products = VenelectronicsScraper().run(sample_pages=2)
     priced = [product for product in products if product.price_usd is not None]
     if not priced:
         raise RuntimeError("La página respondió, pero no presentó precios públicos")
