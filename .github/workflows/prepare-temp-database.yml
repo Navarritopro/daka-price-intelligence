@@ -1,0 +1,77 @@
+name: Preparar base temporal DigitalOcean
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Escribe PREPARAR para crear el esquema en la base temporal"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: ${{ inputs.confirm == 'PREPARAR' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TEMP_DATABASE_URL: ${{ secrets.TEMP_DATABASE_URL }}
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Validar destino temporal vacío
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${TEMP_DATABASE_URL:-}" || { echo "Falta TEMP_DATABASE_URL"; exit 1; }
+
+          database_name="$(psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc 'SELECT current_database()')"
+          test "$database_name" = "daka_price_intelligence_temp" || {
+            echo "Destino rechazado: se esperaba daka_price_intelligence_temp y se recibió $database_name"
+            exit 1
+          }
+
+          table_count="$(psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")"
+          test "$table_count" = "0" || {
+            echo "La base temporal ya contiene $table_count tablas; se cancela para evitar sobrescrituras"
+            exit 1
+          }
+
+      - name: Crear estructura temporal
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+          psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/manual_requests.sql
+          psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase2_damasco.sql
+          psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase3_multimax.sql
+          psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase4_ivoo.sql
+          psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase5_venelectronics.sql
+
+      - name: Validar estructura creada
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_tables=(sources scraping_jobs products price_history product_matches alerts scrape_requests)
+
+          {
+            echo "## Base temporal preparada"
+            echo "| Verificación | Resultado |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for table in "${expected_tables[@]}"; do
+            exists="$(psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+              "SELECT to_regclass('public.$table') IS NOT NULL")"
+            test "$exists" = "t" || { echo "No se creó la tabla $table"; exit 1; }
+            echo "| Tabla $table | OK |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          sources="$(psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+            "SELECT string_agg(slug, ', ' ORDER BY slug) FROM sources")"
+          echo "| Fuentes configuradas | $sources |" >> "$GITHUB_STEP_SUMMARY"
+          echo "Base temporal lista para recibir nuevas ejecuciones."
