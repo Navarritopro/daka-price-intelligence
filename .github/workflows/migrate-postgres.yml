@@ -1,0 +1,102 @@
+name: Migrar PostgreSQL a DigitalOcean
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Escribe MIGRAR para copiar Neon a la base vacía de DigitalOcean"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    if: ${{ inputs.confirm == 'MIGRAR' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOURCE_DATABASE_URL: ${{ secrets.SOURCE_DATABASE_URL }}
+      TARGET_DATABASE_URL: ${{ secrets.TARGET_DATABASE_URL }}
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Validar conexiones y destino vacío
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SOURCE_DATABASE_URL:-}" || { echo "Falta SOURCE_DATABASE_URL"; exit 1; }
+          test -n "${TARGET_DATABASE_URL:-}" || { echo "Falta TARGET_DATABASE_URL"; exit 1; }
+          test "$SOURCE_DATABASE_URL" != "$TARGET_DATABASE_URL" || { echo "Origen y destino no pueden ser iguales"; exit 1; }
+          psql "$SOURCE_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'Origen accesible'"
+          psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT 'Destino accesible'"
+          table_count="$(psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")"
+          test "$table_count" = "0" || { echo "La base destino contiene $table_count tablas; la migración se cancela para no sobrescribir datos"; exit 1; }
+
+      - name: Preparar herramientas PostgreSQL 17
+        shell: bash
+        run: docker pull postgres:17-alpine
+
+      - name: Exportar Neon
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e SOURCE_DATABASE_URL \
+            -v "$RUNNER_TEMP:/backup" \
+            postgres:17-alpine \
+            sh -ec 'pg_dump "$SOURCE_DATABASE_URL" \
+              --format=custom \
+              --compress=6 \
+              --no-owner \
+              --no-acl \
+              --file=/backup/daka-price-intelligence.dump'
+
+      - name: Importar en DigitalOcean
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e TARGET_DATABASE_URL \
+            -v "$RUNNER_TEMP:/backup" \
+            postgres:17-alpine \
+            sh -ec 'pg_restore \
+              --dbname="$TARGET_DATABASE_URL" \
+              --no-owner \
+              --no-acl \
+              --exit-on-error \
+              --jobs=2 \
+              /backup/daka-price-intelligence.dump'
+
+      - name: Validar origen y destino
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tables < <(
+            psql "$SOURCE_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+              "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
+          )
+          test "${#tables[@]}" -gt 0 || { echo "Neon no contiene tablas públicas"; exit 1; }
+          {
+            echo "## Validación de migración"
+            echo "| Tabla | Neon | DigitalOcean | Resultado |"
+            echo "|---|---:|---:|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for table in "${tables[@]}"; do
+            target_exists="$(psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT to_regclass('public.$table') IS NOT NULL")"
+            test "$target_exists" = "t" || { echo "La tabla $table no existe en DigitalOcean"; exit 1; }
+            source_count="$(psql "$SOURCE_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT COUNT(*) FROM public.\"$table\"")"
+            target_count="$(psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT COUNT(*) FROM public.\"$table\"")"
+            result="OK"
+            if [ "$source_count" != "$target_count" ]; then result="DIFERENCIA"; fi
+            echo "| $table | $source_count | $target_count | $result |" >> "$GITHUB_STEP_SUMMARY"
+            test "$source_count" = "$target_count"
+          done
+          psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migration_validate.sql >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Eliminar copia temporal
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/daka-price-intelligence.dump"
