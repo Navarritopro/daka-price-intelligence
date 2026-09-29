@@ -145,6 +145,7 @@ export default function Dashboard() {
   const [loadingMoreMovements, setLoadingMoreMovements] = useState(false);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [reportSending, setReportSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const productListRef = useRef<HTMLDivElement>(null);
@@ -456,6 +457,23 @@ export default function Dashboard() {
     }
   }
 
+  async function sendTelegramReport() {
+    const key = window.prompt("Ingresa la clave administrativa para enviar el resumen por Telegram:");
+    if (!key) return;
+    setReportSending(true);
+    try {
+      const response = await fetch("/api/telegram-report", { method: "POST", headers: { "x-admin-key": key } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "No fue posible solicitar el reporte");
+      setNotice("Reporte solicitado. GitHub lo generará y lo enviará por Telegram en unos segundos.");
+    } catch (requestError) {
+      setNotice(requestError instanceof Error ? requestError.message : "No fue posible solicitar el reporte");
+    } finally {
+      setReportSending(false);
+      window.setTimeout(() => setNotice(null), 6500);
+    }
+  }
+
   const latestDakaJob = jobs.find((job) => job.source === "daka") ?? null;
   const requestWaiting = latestRequest?.status === "queued";
   const requestPreparing = latestRequest?.status === "running" && latestDakaJob?.status !== "running";
@@ -530,7 +548,7 @@ export default function Dashboard() {
           </> : priceTab === "damasco" ? <DamascoCatalog/> : <CompetitorComparison/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax, IVOO y Venelectronics</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage">Fase 5 · Venelectronics</span></div></section>
         </main>
-      ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} onTriggerDaka={triggerScrape}/>}
+      ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}
     </div>
   );
 }

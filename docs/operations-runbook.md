@@ -15,10 +15,17 @@ UTC-4).
 | Venelectronics | GitHub Actions | 09:46 | Respaldos 11:46 y 13:46 |
 | Homologaciones | GitHub Actions | 10:30 | Ejecución manual de `rematch.yml` |
 | Control operativo | GitHub Actions | 14:30 | Alerta si una captura supera 36 horas |
+| Reporte DAKA y competidores | GitHub Actions | 15:00 | Resumen y Top 10 de cambios frente al día anterior |
 | Respaldo lógico | GitHub Actions | Domingo 04:00 | Artefacto validado, retención de 14 días |
 
 Los respaldos de cada competidor se omiten cuando ya existe una captura exitosa
 del mismo día. Daka no tiene horario automático en GitHub para evitar duplicados.
+El reporte consolidado se envía por Telegram a las 15:00 VET. También se puede
+solicitar desde **Monitoreo técnico > Resumen general > Enviar resumen por
+Telegram**; esta acción requiere la clave administrativa.
+
+Para habilitar el botón, Vercel necesita `GITHUB_OWNER`, `GITHUB_REPO` y
+`GITHUB_TOKEN`. El token debe poder ejecutar GitHub Actions en este repositorio.
 
 ## Comprobación diaria
 
