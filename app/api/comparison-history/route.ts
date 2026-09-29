@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, getSql } from "@/lib/db";
+import { resolveComparisonPeriod } from "@/lib/comparison-period";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,7 @@ export async function GET(request: NextRequest) {
     const sql = getSql();
     const requestedSource = request.nextUrl.searchParams.get("source") ?? "damasco";
     const source = SOURCES.includes(requestedSource) ? requestedSource : "damasco";
-    const requestedDays = Number(request.nextUrl.searchParams.get("days"));
-    const days = [7, 30, 90].includes(requestedDays) ? requestedDays : 30;
+    const period = resolveComparisonPeriod(request.nextUrl.searchParams);
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const searchLike = `%${search}%`;
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
           FROM scraping_jobs j, source_ids s
           WHERE j.source_id = s.daka_id AND j.status = 'success'
         ) jobs
-        WHERE capture_date >= (NOW() AT TIME ZONE 'America/Caracas')::date - (${days}::int - 1)
+        WHERE capture_date BETWEEN ${period.startDate}::date AND ${period.endDate}::date
         ORDER BY capture_date, completed_at DESC
       ), competitor_jobs AS (
         SELECT DISTINCT ON (capture_date) id, capture_date
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
           FROM scraping_jobs j, source_ids s
           WHERE j.source_id = s.competitor_id AND j.status = 'success'
         ) jobs
-        WHERE capture_date >= (NOW() AT TIME ZONE 'America/Caracas')::date - (${days}::int - 1)
+        WHERE capture_date BETWEEN ${period.startDate}::date AND ${period.endDate}::date
         ORDER BY capture_date, completed_at DESC
       ), paired_jobs AS (
         SELECT d.capture_date, d.id AS daka_job_id, c.id AS competitor_job_id
@@ -170,13 +170,16 @@ export async function GET(request: NextRequest) {
       averageAbsGapPct: asNumber(row.average_abs_gap_pct), bestDakaGapPct: asNumber(row.best_daka_gap_pct), worstDakaGapPct: asNumber(row.worst_daka_gap_pct), movement: row.movement
     }));
     const total = first ? asNumber(first.total_count) : 0;
-    return NextResponse.json({ source, days, items, total, offset, limit, hasMore: offset + items.length < total, categories: categoryRows.map((row) => row.category), stats: {
+    return NextResponse.json({ source, days: period.days, period, items, total, offset, limit, hasMore: offset + items.length < total, categories: categoryRows.map((row) => row.category), stats: {
       total, dakaLower: first ? asNumber(first.stat_daka_lower) : 0, competitorLower: first ? asNumber(first.stat_competitor_lower) : 0,
       gained: first ? asNumber(first.stat_gained) : 0, lost: first ? asNumber(first.stat_lost) : 0,
       switched: first ? asNumber(first.stat_switched) : 0, averageGapPct: first ? asNumber(first.stat_average_gap) : 0
     }});
   } catch (error) {
     console.error("Comparison history failed", error);
-    return NextResponse.json({ error: "No fue posible analizar el histórico competitivo" }, { status: 500 });
+    const message = error instanceof Error && error.message.includes("fecha") || error instanceof Error && error.message.includes("rango personalizado")
+      ? error.message
+      : "No fue posible analizar el histórico competitivo";
+    return NextResponse.json({ error: message }, { status: message.startsWith("No fue posible") ? 500 : 400 });
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, getSql } from "@/lib/db";
+import { resolveComparisonPeriod } from "@/lib/comparison-period";
 
 export const dynamic = "force-dynamic";
 const SOURCES = ["damasco", "multimax", "ivoo", "venelectronics"];
@@ -11,8 +12,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mat
     if (!Number.isInteger(matchId) || matchId <= 0) return NextResponse.json({ error: "Comparación inválida" }, { status: 400 });
     const requestedSource = request.nextUrl.searchParams.get("source") ?? "damasco";
     const source = SOURCES.includes(requestedSource) ? requestedSource : "damasco";
-    const requestedDays = Number(request.nextUrl.searchParams.get("days"));
-    const days = [7, 30, 90].includes(requestedDays) ? requestedDays : 30;
+    const period = resolveComparisonPeriod(request.nextUrl.searchParams);
     const sql = getSql();
     const rows = await sql`
       WITH daka_jobs AS (
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mat
           FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
           WHERE s.slug = 'daka' AND j.status = 'success'
         ) jobs
-        WHERE capture_date >= (NOW() AT TIME ZONE 'America/Caracas')::date - (${days}::int - 1)
+        WHERE capture_date BETWEEN ${period.startDate}::date AND ${period.endDate}::date
         ORDER BY capture_date, completed_at DESC
       ), competitor_jobs AS (
         SELECT DISTINCT ON (capture_date) id, capture_date
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mat
           FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
           WHERE s.slug = ${source} AND j.status = 'success'
         ) jobs
-        WHERE capture_date >= (NOW() AT TIME ZONE 'America/Caracas')::date - (${days}::int - 1)
+        WHERE capture_date BETWEEN ${period.startDate}::date AND ${period.endDate}::date
         ORDER BY capture_date, completed_at DESC
       ), paired_jobs AS (
         SELECT d.capture_date, d.id AS daka_job_id, c.id AS competitor_job_id
@@ -58,9 +58,12 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mat
     `;
     if (!rows.length) return NextResponse.json({ error: "No existen capturas comparables en el período" }, { status: 404 });
     const points = rows.map((row) => ({ date: row.capture_date, dakaPrice: asNumber(row.daka_price), competitorPrice: asNumber(row.competitor_price), gapUsd: asNumber(row.gap_usd), gapPct: asNumber(row.gap_pct), dakaInStock: row.daka_in_stock, competitorInStock: row.competitor_in_stock }));
-    return NextResponse.json({ matchId, source, days, dakaName: rows[0].daka_name, dakaSap: rows[0].daka_sap, competitorName: rows[0].competitor_name, competitorReference: rows[0].competitor_reference, points });
+    return NextResponse.json({ matchId, source, days: period.days, period, dakaName: rows[0].daka_name, dakaSap: rows[0].daka_sap, competitorName: rows[0].competitor_name, competitorReference: rows[0].competitor_reference, points });
   } catch (error) {
     console.error("Comparison history detail failed", error);
-    return NextResponse.json({ error: "No fue posible cargar la evolución competitiva" }, { status: 500 });
+    const message = error instanceof Error && (error.message.includes("fecha") || error.message.includes("rango personalizado"))
+      ? error.message
+      : "No fue posible cargar la evolución competitiva";
+    return NextResponse.json({ error: message }, { status: message.startsWith("No fue posible") ? 500 : 400 });
   }
 }

@@ -10,7 +10,7 @@ Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el
 - Ejecución manual desde el panel.
 - Alertas por correo electrónico y Telegram.
 - Panel comercial de inteligencia de precios.
-- Comparador actual e histórico competitivo por periodos de 7, 30 y 90 días.
+- Comparador actual e histórico competitivo por periodos de 7, 30, 90 días o un rango personalizado de hasta 365 días.
 - Cuentas individuales con roles de administrador y consulta.
 - Módulo técnico con jobs, duración, páginas, registros y errores.
 - Modelo de datos preparado para incorporar competidores en la Fase 2.
@@ -161,7 +161,9 @@ La homologación automática exige una confianza mínima de 90%. Las coincidenci
 La vista **Histórico competitivo** empareja la última captura exitosa de DAKA y
 del competidor dentro de cada día VET. Incluye liderazgo de precio, cambios de
 posición, brechas, disponibilidad y exportación CSV; nunca sustituye un día faltante
-con una captura antigua.
+con una captura antigua. La evolución se expresa en puntos porcentuales y lenguaje
+natural, mientras que la ventaja del período muestra días, proporción y cobertura
+real de capturas comparables.
 
 ## Fase 4: IVOO
 
