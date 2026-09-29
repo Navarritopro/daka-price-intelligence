@@ -8,11 +8,20 @@ import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
 
 type PricePoint = {
-  price: number;
+  price: number | null;
   scrapedAt: string;
   previousPrice: number | null;
   differenceUsd: number | null;
   changePct: number | null;
+  inStock?: boolean | null;
+  availableQuantity?: number | null;
+};
+type CapturePage = {
+  items: PricePoint[];
+  total: number;
+  hasMore: boolean;
+  minPrice: number | null;
+  maxPrice: number | null;
 };
 type View = "prices" | "operations";
 type PriceTab = "explore" | "changes" | "damasco" | "competitors";
@@ -96,15 +105,17 @@ function changeClass(value: number | null) {
 }
 
 function chartPath(points: PricePoint[]) {
-  if (!points.length) return { line: "", area: "", dots: [] as Array<{ x: number; y: number }> };
-  const ordered = [...points].reverse();
+  const ordered = points.filter((point): point is PricePoint & { price: number } => point.price != null).reverse();
+  if (!ordered.length) return { line: "", area: "", dots: [] as Array<{ x: number; y: number; price: number; scrapedAt: string }> };
   const values = ordered.map((point) => point.price);
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = Math.max(max - min, 1);
   const dots = ordered.map((point, index) => ({
     x: 45 + (index / Math.max(ordered.length - 1, 1)) * 690,
-    y: 190 - ((point.price - min) / range) * 145
+    y: 190 - ((point.price - min) / range) * 145,
+    price: point.price,
+    scrapedAt: point.scrapedAt
   }));
   const line = dots.map((dot, index) => `${index === 0 ? "M" : "L"}${dot.x.toFixed(1)} ${dot.y.toFixed(1)}`).join(" ");
   return { line, area: `${line} L735 210 L45 210 Z`, dots };
@@ -113,6 +124,7 @@ function chartPath(points: PricePoint[]) {
 export default function Dashboard() {
   const [view, setView] = useState<View>("prices");
   const [priceTab, setPriceTab] = useState<PriceTab>("explore");
+  const [historyMode, setHistoryMode] = useState(false);
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [jobs, setJobs] = useState<JobSummary[]>([]);
@@ -120,6 +132,11 @@ export default function Dashboard() {
   const [latestRequest, setLatestRequest] = useState<ScrapeRequest | null>(null);
   const [selected, setSelected] = useState<ProductSummary | null>(null);
   const [history, setHistory] = useState<PricePoint[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyMinPrice, setHistoryMinPrice] = useState<number | null>(null);
+  const [historyMaxPrice, setHistoryMaxPrice] = useState<number | null>(null);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [changeFilter, setChangeFilter] = useState("all");
@@ -377,12 +394,42 @@ export default function Dashboard() {
   }, [jobs, latestRequest?.status, load]);
 
   useEffect(() => {
-    if (!selected) { setHistory([]); return; }
-    fetch(`/api/products/${selected.id}/history`, { cache: "no-store" })
+    if (!selected) {
+      setHistory([]); setHistoryTotal(0); setHistoryHasMore(false);
+      setHistoryMinPrice(null); setHistoryMaxPrice(null);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/products/${selected.id}/captures?limit=100&offset=0`, { cache: "no-store", signal: controller.signal })
       .then((response) => response.ok ? response.json() : Promise.reject())
-      .then(setHistory)
-      .catch(() => setHistory([]));
+      .then((page: CapturePage) => {
+        setHistory(page.items); setHistoryTotal(page.total); setHistoryHasMore(page.hasMore);
+        setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice);
+      })
+      .catch((requestError) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        setHistory([]); setHistoryTotal(0); setHistoryHasMore(false);
+      });
+    return () => controller.abort();
   }, [selected]);
+
+  const loadMoreHistory = useCallback(async () => {
+    if (!selected || historyLoadingMore || !historyHasMore) return;
+    setHistoryLoadingMore(true);
+    try {
+      const response = await fetch(`/api/products/${selected.id}/captures?limit=100&offset=${history.length}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("History unavailable");
+      const page: CapturePage = await response.json();
+      setHistory((current) => [...current, ...page.items]);
+      setHistoryTotal(page.total); setHistoryHasMore(page.hasMore);
+      setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice);
+    } catch {
+      setNotice("No fue posible cargar el siguiente grupo de capturas.");
+      window.setTimeout(() => setNotice(null), 4500);
+    } finally {
+      setHistoryLoadingMore(false);
+    }
+  }, [history.length, historyHasMore, historyLoadingMore, selected]);
 
   useEffect(() => {
     if (priceTab !== "changes" || !selected) {
@@ -450,6 +497,20 @@ export default function Dashboard() {
     }
   }
 
+  function openExplorePrices() {
+    setHistoryMode(false);
+    setPriceTab("explore");
+    setProductStatus("current");
+  }
+
+  function openProductHistory(product?: ProductSummary) {
+    setHistoryMode(true);
+    setPriceTab("explore");
+    setProductStatus("all");
+    setChangeFilter("all");
+    if (product) setSearch(product.externalId);
+  }
+
   const chart = useMemo(() => chartPath(history), [history]);
 
   async function triggerScrape() {
@@ -496,9 +557,8 @@ export default function Dashboard() {
   const requestWaiting = latestRequest?.status === "queued";
   const requestPreparing = latestRequest?.status === "running" && latestDakaJob?.status !== "running";
   const executionBusy = running || requestWaiting || requestPreparing || latestDakaJob?.status === "running";
-  const prices = history.map((point) => point.price);
-  const maxPrice = prices.length ? Math.max(...prices) : null;
-  const minPrice = prices.length ? Math.min(...prices) : null;
+  const maxPrice = historyMaxPrice;
+  const minPrice = historyMinPrice;
   const selectedChange = changeProducts.find((product) => product.id === selected?.id) ?? null;
 
   return (
@@ -531,12 +591,13 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs"><button className={priceTab === "explore" ? "tab active" : "tab"} onClick={() => setPriceTab("explore")}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => setPriceTab("changes")}>Cambios de precios</button><button className="tab" onClick={() => { setPriceTab("explore"); setProductStatus("all"); }}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => setPriceTab("damasco")}>Catálogos competencia</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => setPriceTab("competitors")}>Comparador</button></div>
+          <div className="tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("changes"); }}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("damasco"); }}>Catálogos competencia</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("competitors"); }}>Comparador</button></div>
           {priceTab === "explore" ? <>
-          <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Estado del producto" value={productStatus} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>Últimos 90 días</option></select></section>
+          {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo por producto</strong><span>Selecciona un producto para consultar todas sus capturas, incluyendo los registros donde el precio no cambió.</span></div><button onClick={openExplorePrices}>Volver al catálogo actual</button></div>}
+          <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>
 
           <section className="content-grid">
-            <article className="product-list"><div className="section-head"><h2>{productStatus === "current" ? "Catálogo actual" : productStatus === "missing" ? "No vistos en última captura" : "Catálogo histórico"}</h2><small>{productsLoading ? "Consultando catálogo…" : `Mostrando ${integer.format(products.length)} de ${integer.format(totalProducts)}`}</small></div><div className="product-scroll" ref={productListRef} onScroll={handleProductScroll}>
+            <article className="product-list"><div className="section-head"><h2>{historyMode ? "Productos con histórico" : productStatus === "current" ? "Catálogo actual" : productStatus === "missing" ? "No vistos en última captura" : "Catálogo histórico"}</h2><small>{productsLoading ? "Consultando catálogo…" : `Mostrando ${integer.format(products.length)} de ${integer.format(totalProducts)}`}</small></div><div className="product-scroll" ref={productListRef} onScroll={handleProductScroll}>
               {productsLoading && <div className="empty-state">Buscando productos en todo el catálogo…</div>}
               {!productsLoading && productLoadError && products.length === 0 && <div className="empty-state product-error">{productLoadError}</div>}
               {!productsLoading && !productLoadError && products.length === 0 && <div className="empty-state">No encontramos productos con ese nombre o código SAP.</div>}
@@ -545,9 +606,9 @@ export default function Dashboard() {
             </div></article>
             <article className="detail-card">
               {selected ? <><div className="detail-main"><div className="detail-title"><div><h2>{selected.name}</h2><div className="meta"><span className="source-badge">D</span> Tiendas Daka · SAP {selected.externalId}</div>{!selected.seenInLatest && <div className="product-missing-notice">No fue visto en la última captura. Se muestra su último precio histórico.</div>}</div><div className="current-price"><span className="meta">{selected.seenInLatest ? "Precio actual" : "Último precio registrado"}</span><strong>{selected.currentPrice == null ? "Sin precio" : money.format(selected.currentPrice)}</strong><span className={`variation ${changeClass(selected.changePct)}`}>{selected.changePct == null ? "Sin comparación" : `${selected.changePct > 0 ? "+" : ""}${selected.changePct.toFixed(1)}% vs. captura anterior`}</span></div></div>
-                {history.length ? <svg className="price-chart" viewBox="0 0 760 245" role="img" aria-label="Histórico de precio"><defs><linearGradient id="priceArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1258d9" stopOpacity=".2"/><stop offset="1" stopColor="#1258d9" stopOpacity="0"/></linearGradient></defs><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-area" d={chart.area}/><path className="chart-line" d={chart.line}/>{chart.dots.slice(-1).map((dot) => <circle key="last" className="chart-point" cx={dot.x} cy={dot.y} r="5"/>)}</svg> : <div className="chart-empty">El gráfico aparecerá después de la primera captura.</div>}
-                <div className="mini-grid"><div><span>Precio máximo</span><b>{maxPrice == null ? "—" : money.format(maxPrice)}</b></div><div><span>Precio mínimo</span><b>{minPrice == null ? "—" : money.format(minPrice)}</b></div><div><span>Capturas</span><b>{history.length} registros</b></div><div><span>Última captura</span><b>{formatDate(selected.scrapedAt)}</b></div></div></div>
-                <div className="history-table"><div className="section-head"><h2>Últimas capturas</h2><small>Fecha y hora exactas · VET</small></div><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio USD</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{history.slice(0, 10).map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div></div></> : <div className="empty-state detail-empty">Selecciona un producto para consultar su histórico.</div>}
+                {history.length ? <svg className="price-chart" viewBox="0 0 760 245" role="img" aria-label="Histórico de precio"><defs><linearGradient id="priceArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1258d9" stopOpacity=".2"/><stop offset="1" stopColor="#1258d9" stopOpacity="0"/></linearGradient></defs><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-area" d={chart.area}/><path className="chart-line" d={chart.line}/>{(historyMode ? chart.dots : chart.dots.slice(-1)).map((dot, index) => <circle key={`${dot.scrapedAt}-${index}`} className="chart-point" cx={dot.x} cy={dot.y} r={historyMode ? "4" : "5"}><title>{`${formatDate(dot.scrapedAt)} · ${money.format(dot.price)}`}</title></circle>)}</svg> : <div className="chart-empty">El gráfico aparecerá después de la primera captura.</div>}
+                <div className="mini-grid"><div><span>Precio máximo</span><b>{maxPrice == null ? "—" : money.format(maxPrice)}</b></div><div><span>Precio mínimo</span><b>{minPrice == null ? "—" : money.format(minPrice)}</b></div><div><span>Capturas totales</span><b>{integer.format(historyTotal)} registros</b></div><div><span>Última captura</span><b>{formatDate(selected.scrapedAt)}</b></div></div></div>
+                <div className="history-table"><div className="section-head"><h2>{historyMode ? "Todas las capturas del producto" : "Últimas capturas"}</h2><small>{historyMode ? `Mostrando ${integer.format(history.length)} de ${integer.format(historyTotal)} · incluye capturas sin variación` : "Fecha y hora exactas · VET"}</small></div><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio USD</th><th>Diferencia USD</th><th>Variación</th>{historyMode && <><th>Disponibilidad</th><th>Unidades reportadas</th></>}</tr></thead><tbody>{(historyMode ? history : history.slice(0, 10)).map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.price == null ? "Sin precio" : money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td>{historyMode && <><td>{point.inStock == null ? "No reportada" : point.inStock ? "Disponible" : "No disponible"}</td><td>{point.availableQuantity == null ? "No reportadas" : integer.format(point.availableQuantity)}</td></>}</tr>)}</tbody></table></div>{historyMode && <div className="changes-load-more">{historyHasMore ? <button onClick={() => void loadMoreHistory()} disabled={historyLoadingMore}>{historyLoadingMore ? "Cargando…" : "Cargar 100 capturas más"}</button> : <span>Se mostraron todas las capturas guardadas del producto</span>}</div>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para consultar su histórico.</div>}
             </article>
           </section>
           </> : priceTab === "changes" ? <>
@@ -560,9 +621,9 @@ export default function Dashboard() {
                 {changeProducts.length > 0 && <div className="changes-load-more">{hasMoreChanges ? <button onClick={() => void loadMoreChanges()} disabled={loadingMoreChanges}>{loadingMoreChanges ? "Cargando…" : "Cargar 50 productos más"}</button> : <span>Se mostraron todos los productos con cambios</span>}</div>}
               </article>
               <article className="change-detail-card">
-                {selectedChange ? <><div className="change-detail-head"><div><span className="eyebrow-dark">Detalle del período</span><h2>{selectedChange.name}</h2><p>SAP {selectedChange.externalId} · {selectedChange.changeCount} cambios {changeDays === "1" ? "durante el día" : changeDays === "all" ? "en todo el histórico" : `en ${changeDays} días`}</p></div><div className={changeClass(selectedChange.netDifferenceUsd)}><strong>{selectedChange.netDifferenceUsd == null ? "—" : `${selectedChange.netDifferenceUsd > 0 ? "+" : ""}${money.format(selectedChange.netDifferenceUsd)}`}</strong><span>{selectedChange.netChangePct == null ? "Sin comparación" : `${selectedChange.netChangePct > 0 ? "+" : ""}${selectedChange.netChangePct.toFixed(1)}% acumulado`}</span></div></div>
-                  {history.length > 0 && <><div className="chart-caption">Gráfico de las últimas 90 capturas · la tabla conserva todos los movimientos</div><svg className="price-chart change-chart" viewBox="0 0 760 245" role="img" aria-label="Evolución histórica del precio"><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-line" d={chart.line}/>{chart.dots.map((dot, index) => <circle key={index} className="chart-point" cx={dot.x} cy={dot.y} r="4"/>)}</svg></>}
-                  <div className="history-table"><div className="section-head"><h2>Movimientos individuales</h2><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los movimientos del período" : "No existen movimientos con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
+                {selectedChange ? <><div className="change-detail-head"><div><span className="eyebrow-dark">Detalle del período</span><h2>{selectedChange.name}</h2><p>SAP {selectedChange.externalId} · {selectedChange.changeCount} cambios {changeDays === "1" ? "durante el día" : changeDays === "all" ? "en todo el histórico" : `en ${changeDays} días`}</p><button className="history-link-button" onClick={() => openProductHistory(selectedChange)}>Ver todas las capturas del producto</button></div><div className={changeClass(selectedChange.netDifferenceUsd)}><strong>{selectedChange.netDifferenceUsd == null ? "—" : `${selectedChange.netDifferenceUsd > 0 ? "+" : ""}${money.format(selectedChange.netDifferenceUsd)}`}</strong><span>{selectedChange.netChangePct == null ? "Sin comparación" : `${selectedChange.netChangePct > 0 ? "+" : ""}${selectedChange.netChangePct.toFixed(1)}% acumulado`}</span></div></div>
+                  {history.length > 0 && <><div className="chart-caption">Evolución de las capturas guardadas · coloca el cursor sobre un punto para ver su fecha y precio</div><svg className="price-chart change-chart" viewBox="0 0 760 245" role="img" aria-label="Evolución histórica del precio"><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-line" d={chart.line}/>{chart.dots.map((dot, index) => <circle key={`${dot.scrapedAt}-${index}`} className="chart-point" cx={dot.x} cy={dot.y} r="4"><title>{`${formatDate(dot.scrapedAt)} · ${money.format(dot.price)}`}</title></circle>)}</svg><div className="mini-grid change-history-summary"><div><span>Precio máximo</span><b>{maxPrice == null ? "—" : money.format(maxPrice)}</b></div><div><span>Precio mínimo</span><b>{minPrice == null ? "—" : money.format(minPrice)}</b></div><div><span>Capturas guardadas</span><b>{integer.format(historyTotal)}</b></div><div><span>Cambios del período</span><b>{integer.format(selectedChange.changeCount)}</b></div></div></>}
+                  <div className="history-table"><div className="section-head"><div><h2>Historial de cambios de precio</h2><small className="section-explanation">Solo se muestran las capturas donde el precio cambió.</small></div><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{point.price == null ? "Sin precio" : money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los cambios reales del período" : "No existen cambios con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
               </article>
             </section>
           </> : priceTab === "damasco" ? <DamascoCatalog reportComparison={reportComparison}/> : <CompetitorComparison/>}
