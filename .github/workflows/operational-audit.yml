@@ -1,33 +1,26 @@
-name: Scraping diario Daka
+name: Control operativo diario
 
 on:
-  # Daka se programa a las 09:00 VET en el Programador de tareas de Windows.
-  # GitHub conserva únicamente la ejecución manual para diagnóstico controlado.
   workflow_dispatch:
-    inputs:
-      trigger_type:
-        description: Origen de la ejecución
-        required: false
-        default: manual
-        type: choice
-        options:
-          - manual
-          - local
-
-concurrency:
-  group: daka-price-scraper
-  cancel-in-progress: false
+  schedule:
+    # 02:30 p. m. VET, después de los intentos principales y de respaldo.
+    - cron: "30 18 * * *"
 
 permissions:
   contents: read
 
+concurrency:
+  group: daily-operational-audit
+  cancel-in-progress: false
+
 jobs:
-  scrape:
+  audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 10
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      ALERT_THRESHOLD_PERCENT: ${{ vars.ALERT_THRESHOLD_PERCENT || '5' }}
+      MONITORED_SOURCES: ${{ vars.MONITORED_SOURCES || 'daka,damasco,multimax,ivoo,venelectronics' }}
+      MAX_SUCCESS_AGE_HOURS: ${{ vars.MAX_SUCCESS_AGE_HOURS || '36' }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       SMTP_HOST: ${{ vars.SMTP_HOST }}
@@ -36,26 +29,16 @@ jobs:
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM }}
       ALERT_EMAIL_TO: ${{ vars.ALERT_EMAIL_TO }}
-      TRIGGER_TYPE: ${{ inputs.trigger_type || 'manual' }}
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
-
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: scraper/requirements.txt
-
       - name: Instalar dependencias
         run: pip install -r scraper/requirements.txt
-
-      - name: Instalar Chromium
-        run: playwright install --with-deps chromium
-
-      - name: Ejecutar pruebas del parser
-        run: python -m unittest discover -s scraper/tests -p "test_*.py"
-
-      - name: Ejecutar scraping
-        run: python scraper/scrape.py
+      - name: Verificar capturas recientes
+        run: python scraper/health_audit.py

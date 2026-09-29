@@ -1,0 +1,74 @@
+name: Respaldo semanal PostgreSQL
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Domingo 04:00 a. m. VET. No coincide con las capturas diarias.
+    - cron: "0 8 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgres-logical-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Validar configuración
+        shell: bash
+        run: test -n "${DATABASE_URL:-}" || { echo "Falta DATABASE_URL"; exit 1; }
+
+      - name: Preparar PostgreSQL 17
+        run: docker pull postgres:17-alpine
+
+      - name: Crear respaldo lógico
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/backup"
+          docker run --rm \
+            -e DATABASE_URL \
+            -v "$RUNNER_TEMP:/backup" \
+            postgres:17-alpine \
+            sh -ec 'pg_dump "$DATABASE_URL" \
+              --format=custom \
+              --compress=9 \
+              --no-owner \
+              --no-acl \
+              --file=/backup/daka-price-intelligence.dump'
+
+      - name: Validar contenido y generar checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$RUNNER_TEMP:/backup" \
+            postgres:17-alpine \
+            pg_restore --list /backup/daka-price-intelligence.dump > "$RUNNER_TEMP/backup/contents.txt"
+          test -s "$RUNNER_TEMP/backup/contents.txt"
+          cd "$RUNNER_TEMP/backup"
+          sha256sum daka-price-intelligence.dump > daka-price-intelligence.dump.sha256
+          echo "## Respaldo PostgreSQL validado" >> "$GITHUB_STEP_SUMMARY"
+          echo "El archivo se conservará durante 14 días como artefacto privado del workflow." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar respaldo por 14 días
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-backup-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/backup/daka-price-intelligence.dump
+            ${{ runner.temp }}/backup/daka-price-intelligence.dump.sha256
+            ${{ runner.temp }}/backup/contents.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Eliminar copia del runner
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/backup/daka-price-intelligence.dump" "$RUNNER_TEMP/backup/daka-price-intelligence.dump.sha256" "$RUNNER_TEMP/backup/contents.txt"

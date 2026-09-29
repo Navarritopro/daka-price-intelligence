@@ -23,5 +23,5 @@ jobs:
         run: pip install -r scraper/requirements.txt
       - name: Ejecutar pruebas de IVOO
         run: python -m unittest scraper.tests.test_ivoo
-      - name: Consultar una página pública sin escribir en Neon
+      - name: Consultar una página pública sin escribir en PostgreSQL
         run: python scraper/diagnose_ivoo.py

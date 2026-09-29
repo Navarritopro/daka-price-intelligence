@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   diagnose:
-    name: Diagnóstico sin escritura en Neon
+    name: Diagnóstico sin escritura en PostgreSQL
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
