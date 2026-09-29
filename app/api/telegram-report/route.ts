@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAdminRequest } from "@/lib/auth";
 
 const WORKFLOW_FILE = "competitor-price-report.yml";
 
 export async function POST(request: NextRequest) {
-  const configuredKey = process.env.ADMIN_API_KEY;
-  const suppliedKey = request.headers.get("x-admin-key");
-  if (!configuredKey || suppliedKey !== configuredKey) {
-    return NextResponse.json({ error: "Clave administrativa inválida" }, { status: 401 });
+  if (!await isAdminRequest(request)) {
+    return NextResponse.json({ error: "Acceso administrativo requerido" }, { status: 403 });
   }
 
   const owner = process.env.GITHUB_OWNER;

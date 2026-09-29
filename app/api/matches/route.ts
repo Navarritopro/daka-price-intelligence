@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { asNumber, getSql } from "@/lib/db";
+import { isAdminRequest } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,10 @@ type Evidence = {
 
 function isBulkEligible(confidence: number, method: string, evidence: Evidence) {
   const numericAttributes = (evidence.sharedAttributes ?? []).filter((value) => !value.startsWith("tech:"));
-  const strongIdentity = (evidence.sharedModels?.length ?? 0) > 0 || numericAttributes.length >= 2;
+  const exactModelRequired = ["telefono", "laptop", "router", "modem", "repetidor", "sistema_mesh", "access_point"]
+    .includes(evidence.productType ?? "");
+  const strongIdentity = (evidence.sharedModels?.length ?? 0) > 0
+    || (!exactModelRequired && numericAttributes.length >= 2);
   return confidence >= 0.85
     && evidence.candidateRank === 1
     && Boolean(evidence.brand && evidence.productType)
@@ -142,9 +146,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const configuredKey = process.env.ADMIN_API_KEY;
-  if (!configuredKey || request.headers.get("x-admin-key") !== configuredKey) {
-    return NextResponse.json({ error: "Clave administrativa incorrecta" }, { status: 401 });
+  if (!await isAdminRequest(request)) {
+    return NextResponse.json({ error: "Acceso administrativo requerido" }, { status: 403 });
   }
   try {
     const body = await request.json();

@@ -5,6 +5,7 @@ import type { DashboardData, JobsResponse, JobSummary, MonitoringSourceSummary, 
 import CompetitorComparison from "@/components/competitor-comparison";
 import DamascoCatalog from "@/components/damasco-catalog";
 import TechnicalMonitoring from "@/components/technical-monitoring";
+import SessionControls from "@/components/session-controls";
 
 type PricePoint = {
   price: number;
@@ -146,6 +147,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [reportSending, setReportSending] = useState(false);
+  const [currentRole, setCurrentRole] = useState<"admin" | "viewer" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const productListRef = useRef<HTMLDivElement>(null);
@@ -431,11 +433,9 @@ export default function Dashboard() {
   const chart = useMemo(() => chartPath(history), [history]);
 
   async function triggerScrape() {
-    const key = window.prompt("Ingresa la clave administrativa para iniciar el scraping:");
-    if (!key) return;
     setRunning(true);
     try {
-      const response = await fetch("/api/scrape", { method: "POST", headers: { "x-admin-key": key } });
+      const response = await fetch("/api/scrape", { method: "POST" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No fue posible iniciar la ejecución");
       setLatestRequest({
@@ -458,11 +458,9 @@ export default function Dashboard() {
   }
 
   async function sendTelegramReport() {
-    const key = window.prompt("Ingresa la clave administrativa para enviar el resumen por Telegram:");
-    if (!key) return;
     setReportSending(true);
     try {
-      const response = await fetch("/api/telegram-report", { method: "POST", headers: { "x-admin-key": key } });
+      const response = await fetch("/api/telegram-report", { method: "POST" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No fue posible solicitar el reporte");
       setNotice("Reporte solicitado. GitHub lo generará y lo enviará por Telegram en unos segundos.");
@@ -494,7 +492,8 @@ export default function Dashboard() {
         </nav>
         <div className="header-actions">
           <span className="next-run">Competidores · 09:07–09:33 AM VET</span>
-          <button className="primary-button" onClick={triggerScrape} disabled={executionBusy}>{running ? "Iniciando…" : executionBusy ? "Ejecución pendiente" : "Actualizar datos ahora"}</button>
+          {currentRole === "admin" && <button className="primary-button" onClick={triggerScrape} disabled={executionBusy}>{running ? "Iniciando…" : executionBusy ? "Ejecución pendiente" : "Actualizar datos ahora"}</button>}
+          <SessionControls onRole={setCurrentRole}/>
         </div>
       </header>
 
@@ -548,7 +547,7 @@ export default function Dashboard() {
           </> : priceTab === "damasco" ? <DamascoCatalog/> : <CompetitorComparison/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax, IVOO y Venelectronics</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage">Fase 5 · Venelectronics</span></div></section>
         </main>
-      ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}
+      ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} canAdmin={currentRole === "admin"} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}
     </div>
   );
 }

@@ -27,6 +27,37 @@ Telegram**; esta acción requiere la clave administrativa.
 Para habilitar el botón, Vercel necesita `GITHUB_OWNER`, `GITHUB_REPO` y
 `GITHUB_TOKEN`. El token debe poder ejecutar GitHub Actions en este repositorio.
 
+## Acceso seguro a la plataforma
+
+La aplicación requiere una cuenta individual. Los roles disponibles son:
+
+- `admin`: administra usuarios, solicita DAKA, gestiona homologaciones y envía el resumen.
+- `viewer`: consulta precios, históricos, comparaciones y monitoreo.
+
+Vercel requiere `AUTH_SECRET`, `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_NAME` e
+`INITIAL_ADMIN_PASSWORD`. El administrador inicial se crea durante el primer inicio
+de sesión, únicamente cuando `app_users` está vacío. Después se recomienda eliminar
+`INITIAL_ADMIN_PASSWORD` de Vercel y conservar `AUTH_SECRET` sin cambios; rotarlo
+cierra todas las sesiones activas.
+
+La sesión dura ocho horas, usa una cookie `HttpOnly`, `Secure` y `SameSite=Strict`.
+Cinco intentos incorrectos bloquean la cuenta durante quince minutos.
+
+## Grupo privado de Telegram
+
+1. Crear un grupo privado y agregar solo a los compañeros autorizados.
+2. Agregar el bot de DAKA Price Lab al grupo con permiso para enviar mensajes.
+3. Enviar dentro del grupo un comando dirigido al bot, por ejemplo
+   `/registrar@nombre_del_bot`.
+4. Ejecutar manualmente **Identificar grupo privado de Telegram** en GitHub Actions.
+5. Copiar únicamente el `CHAT_ID` negativo mostrado por el workflow.
+6. Reemplazar el secreto `TELEGRAM_CHAT_ID` de GitHub por ese identificador.
+7. Ejecutar **Reporte diario de precios DAKA y competidores** para validar.
+
+El token del bot nunca debe colocarse en una URL, captura, chat o archivo del
+repositorio. Para dar o retirar acceso a las notificaciones basta con administrar
+los integrantes del grupo privado.
+
 ## Comprobación diaria
 
 1. Abrir `https://daka-price-intelligence.vercel.app/api/health` y confirmar

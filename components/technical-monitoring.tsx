@@ -176,6 +176,7 @@ export default function TechnicalMonitoring({
   latestRequest,
   running,
   reportSending,
+  canAdmin,
   onTriggerDaka,
   onSendTelegramReport
 }: {
@@ -184,6 +185,7 @@ export default function TechnicalMonitoring({
   latestRequest: ScrapeRequest | null;
   running: boolean;
   reportSending: boolean;
+  canAdmin: boolean;
   onTriggerDaka: () => void;
   onSendTelegramReport: () => void;
 }) {
@@ -238,9 +240,9 @@ export default function TechnicalMonitoring({
           <h1>Monitoreo técnico</h1>
           <p>Seguimiento multifuente de extracción, persistencia, homologación y calidad del catálogo.</p>
         </div>
-        {selectedSource === "all" ? (
+        {selectedSource === "all" && canAdmin ? (
           <button className="primary-button operations-run" onClick={onSendTelegramReport} disabled={reportSending}>✉ {reportSending ? "Solicitando reporte…" : "Enviar resumen por Telegram"}</button>
-        ) : selectedSource === "daka" ? (
+        ) : selectedSource === "daka" && canAdmin ? (
           <button className="primary-button operations-run" onClick={onTriggerDaka} disabled={executionBusy}>▶ {executionBusy ? "Ejecución pendiente" : "Iniciar DAKA manualmente"}</button>
         ) : isCompetitor ? (
           <a className="primary-button operations-link" href={`https://github.com/Navarritopro/daka-price-intelligence/actions/workflows/scrape-${selectedSource}.yml`} target="_blank" rel="noreferrer">Abrir GitHub Actions ↗</a>

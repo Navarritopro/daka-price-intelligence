@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type ReviewProduct = { id: number; externalId: string; name: string; url: string; price: number | null; inStock: boolean | null; brand?: string | null; model?: string | null; category?: string | null };
 type Evidence = { engineVersion?: string; brand?: string; productType?: string; sharedModels?: string[]; sharedAttributes?: string[]; tokenSimilarity?: number; nameSimilarity?: number; warnings?: string[]; conflicts?: string[]; variantNotes?: string[]; candidateRank?: number; candidateCount?: number; candidateTotal?: number };
@@ -50,7 +50,6 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
   const [processing, setProcessing] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
-  const adminKey = useRef<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -80,24 +79,16 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
 
   useEffect(() => { void load(0); }, [load]);
 
-  function getAdminKey() {
-    if (!adminKey.current) adminKey.current = window.prompt("Ingresa la clave administrativa para guardar decisiones de homologación:");
-    return adminKey.current;
-  }
-
   async function decide(matchId: number, action: "confirm" | "reject") {
-    const key = getAdminKey();
-    if (!key) return;
     setProcessing(true);
     setMessage(null);
     try {
       const response = await fetch("/api/matches", {
-        method: "POST", headers: { "content-type": "application/json", "x-admin-key": key },
+        method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ matchId, action }),
       });
       const result = await response.json();
       if (!response.ok) {
-        if (response.status === 401) adminKey.current = null;
         throw new Error(result.error ?? "No fue posible guardar la decisión");
       }
       onDecision();
@@ -130,19 +121,16 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
 
   async function confirmSelected() {
     if (!selected.size) return;
-    const key = getAdminKey();
-    if (!key) return;
     if (!window.confirm(`Confirmar ${selected.size} equivalencias seleccionadas como el mismo producto?`)) return;
     setProcessing(true);
     setMessage(null);
     try {
       const response = await fetch("/api/matches", {
-        method: "POST", headers: { "content-type": "application/json", "x-admin-key": key },
+        method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "confirm_bulk", matchIds: [...selected] }),
       });
       const result = await response.json();
       if (!response.ok) {
-        if (response.status === 401) adminKey.current = null;
         throw new Error(result.error ?? "No fue posible confirmar la selección");
       }
       onDecision();
@@ -156,7 +144,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
   }
 
   return <section className="review-module">
-    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación · Motor V2.2</span><h2>Coincidencias agrupadas por producto</h2><p>Revisa un producto DAKA y elige solamente su alternativa equivalente en {competitorName}.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
+    <div className="review-header"><div><span className="eyebrow-dark">Control de homologación · Motor V2.3</span><h2>Coincidencias agrupadas por producto</h2><p>Revisa un producto DAKA y elige solamente su alternativa equivalente en {competitorName}.</p></div><button className="secondary-button" onClick={onBack}>← Volver al comparador</button></div>
     <div className="review-summary">
       <div><strong>{integer.format(totalProducts)}</strong><span>productos DAKA por validar</span></div>
       <div><strong>{integer.format(totalAlternatives)}</strong><span>alternativas analizadas</span></div>
