@@ -1,0 +1,19 @@
+name: Identificar grupo privado de Telegram
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Mostrar identificador seguro del grupo
+        run: python scraper/discover_telegram_group.py
