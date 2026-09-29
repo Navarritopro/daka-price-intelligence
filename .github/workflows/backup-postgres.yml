@@ -34,7 +34,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/backup"
           docker run --rm \
             -e DATABASE_URL \
-            -v "$RUNNER_TEMP:/backup" \
+            -v "$RUNNER_TEMP/backup:/backup" \
             postgres:17-alpine \
             sh -ec 'pg_dump "$DATABASE_URL" \
               --format=custom \
@@ -48,7 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm \
-            -v "$RUNNER_TEMP:/backup" \
+            -v "$RUNNER_TEMP/backup:/backup" \
             postgres:17-alpine \
             pg_restore --list /backup/daka-price-intelligence.dump > "$RUNNER_TEMP/backup/contents.txt"
           test -s "$RUNNER_TEMP/backup/contents.txt"
