@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import MatchReview from "@/components/match-review";
+import CompetitorHistory from "@/components/competitor-history";
 
 type StoreProduct = {
   id: number;
@@ -88,6 +89,7 @@ export default function CompetitorComparison() {
   const [source, setSource] = useState<CompetitorSource>("damasco");
   const competitor = COMPETITORS[source];
   const [mode, setMode] = useState<"comparison" | "review">("comparison");
+  const [analysisView, setAnalysisView] = useState<"current" | "history">("current");
   const [refreshToken, setRefreshToken] = useState(0);
   const [items, setItems] = useState<Comparison[]>([]);
   const [selected, setSelected] = useState<Comparison | null>(null);
@@ -183,6 +185,8 @@ export default function CompetitorComparison() {
     <nav className="competitor-source-tabs" aria-label="Competidor seleccionado">
       {(Object.entries(COMPETITORS) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={source === slug ? "active" : ""} onClick={() => { setSource(slug); setMode("comparison"); }}>{item.name}</button>)}
     </nav>
+    <nav className="comparison-view-tabs" aria-label="Tipo de análisis competitivo"><button className={analysisView === "current" ? "active" : ""} onClick={() => setAnalysisView("current")}>Posición actual</button><button className={analysisView === "history" ? "active" : ""} onClick={() => setAnalysisView("history")}>Histórico competitivo</button></nav>
+    {analysisView === "history" ? <CompetitorHistory source={source} competitorName={competitor.name}/> : <>
     <section className="competitor-overview">
       <div><span className="eyebrow-dark">Benchmarking competitivo · Multicompetidor</span><h2>DAKA frente a {competitor.name}</h2><p>Solo se comparan productos equivalentes con coincidencia automática de alta confianza o validación confirmada.</p></div>
       <div className="competitor-overview-actions">
@@ -224,5 +228,6 @@ export default function CompetitorComparison() {
           <div className="comparison-meta"><div><span>Captura DAKA</span><b>{formatDate(selected.daka.scrapedAt)}</b></div><div><span>Captura {competitor.name}</span><b>{formatDate(selected.competitor.scrapedAt)}</b></div></div></> : <div className="empty-state detail-empty">Selecciona una comparación para revisar la equivalencia.</div>}
       </article>
     </section>
+    </>}
   </>;
 }

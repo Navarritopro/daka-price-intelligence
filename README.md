@@ -10,6 +10,8 @@ Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el
 - Ejecución manual desde el panel.
 - Alertas por correo electrónico y Telegram.
 - Panel comercial de inteligencia de precios.
+- Comparador actual e histórico competitivo por periodos de 7, 30 y 90 días.
+- Cuentas individuales con roles de administrador y consulta.
 - Módulo técnico con jobs, duración, páginas, registros y errores.
 - Modelo de datos preparado para incorporar competidores en la Fase 2.
 
@@ -89,7 +91,7 @@ Daka no tiene cron en GitHub. Su horario automático se mantiene en el Programad
 
 Crear un token de acceso de GitHub para la cuenta u organización propietaria del repositorio. Conceder únicamente el permiso necesario para ejecutar Actions en este repositorio.
 
-La clave `ADMIN_API_KEY` protege el endpoint manual. El usuario la ingresa al pulsar **Actualizar datos ahora**; no se guarda en el navegador ni forma parte del código.
+Las acciones manuales se autorizan con la sesión individual y el rol `admin`.
 
 ## 4. Desplegar en Vercel
 
@@ -100,7 +102,10 @@ La clave `ADMIN_API_KEY` protege el endpoint manual. El usuario la ingresa al pu
 | Variable | Uso |
 |---|---|
 | `DATABASE_URL` | Conexión PostgreSQL |
-| `ADMIN_API_KEY` | Clave larga para ejecución manual |
+| `AUTH_SECRET` | Firma segura de las sesiones web |
+| `INITIAL_ADMIN_EMAIL` | Correo usado para crear el primer administrador |
+| `INITIAL_ADMIN_NAME` | Nombre del primer administrador |
+| `INITIAL_ADMIN_PASSWORD` | Contraseña temporal; eliminar después del primer acceso |
 | `GITHUB_OWNER` | Usuario u organización propietaria |
 | `GITHUB_REPO` | Nombre del repositorio |
 | `GITHUB_WORKFLOW_FILE` | `scrape.yml` |
@@ -137,7 +142,7 @@ python scraper/scrape.py
 
 - No subir `.env`, contraseñas ni tokens al repositorio.
 - Usar secretos separados en GitHub y Vercel.
-- Rotar `ADMIN_API_KEY` y `GITHUB_TOKEN` si se comparten accidentalmente.
+- Rotar `AUTH_SECRET` y `GITHUB_TOKEN` si se comparten accidentalmente.
 - Usar un token de GitHub limitado a un solo repositorio.
 - Mantener la base de datos con SSL obligatorio.
 - Consultar el [runbook operativo](docs/operations-runbook.md) para validación diaria, fallos y recuperación.
@@ -152,6 +157,11 @@ La primera integración competitiva incorpora Damasco mediante su catálogo púb
 4. Abrir la pestaña **Competidores** del dashboard.
 
 La homologación automática exige una confianza mínima de 90%. Las coincidencias dudosas quedan en estado `review` y no se presentan como equivalencias hasta ser validadas. Cada fuente conserva su propio producto, job, precio, stock e histórico.
+
+La vista **Histórico competitivo** empareja la última captura exitosa de DAKA y
+del competidor dentro de cada día VET. Incluye liderazgo de precio, cambios de
+posición, brechas, disponibilidad y exportación CSV; nunca sustituye un día faltante
+con una captura antigua.
 
 ## Fase 4: IVOO
 
