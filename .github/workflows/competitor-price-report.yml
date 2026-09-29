@@ -1,0 +1,36 @@
+name: Reporte diario de precios DAKA y competidores
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:00 p. m. VET, después de todos los intentos de respaldo.
+    - cron: "0 19 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-price-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+      - name: Instalar dependencias
+        run: pip install -r scraper/requirements.txt
+      - name: Generar y enviar reporte comparativo de todas las fuentes
+        run: python scraper/competitor_price_report.py
