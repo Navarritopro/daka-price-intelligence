@@ -48,7 +48,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: "Sesión requerida" }, { status: 401 });
   }
   const login = new URL("/login", request.url);
-  login.searchParams.set("next", pathname);
+  login.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
   return NextResponse.redirect(login);
 }
 

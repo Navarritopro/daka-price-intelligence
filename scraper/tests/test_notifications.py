@@ -5,10 +5,25 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from notifications import _safe_error, notify_failure
+from notifications import _safe_error, notify_failure, send_telegram
 
 
 class NotificationTests(unittest.TestCase):
+    @patch("notifications.requests.post")
+    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "token", "TELEGRAM_CHAT_ID": "chat"})
+    def test_telegram_adds_inline_button_to_message(self, post):
+        post.return_value.raise_for_status.return_value = None
+        sent = send_telegram(
+            "Resumen",
+            buttons=[{"text": "Ver variaciones", "url": "https://example.com/?source=daka"}],
+        )
+        self.assertTrue(sent)
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(
+            payload["reply_markup"]["inline_keyboard"][0][0],
+            {"text": "Ver variaciones", "url": "https://example.com/?source=daka"},
+        )
+
     def test_safe_error_removes_database_credentials(self):
         error = RuntimeError(
             "connection failed for postgresql://do_admin:secret-password@example.com:25060/app"

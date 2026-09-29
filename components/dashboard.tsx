@@ -26,6 +26,7 @@ type ChangeProduct = ProductSummary & {
   latestChangeAt: string | null;
 };
 type ChangeStats = { productsChanged: number; totalChanges: number; drops: number; increases: number };
+type ReportComparison = { source: string; currentJob: string; previousJob: string };
 type ChangePage = {
   items: ChangeProduct[];
   total: number;
@@ -150,6 +151,7 @@ export default function Dashboard() {
   const [currentRole, setCurrentRole] = useState<"admin" | "viewer" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [reportComparison, setReportComparison] = useState<ReportComparison | null>(null);
   const productListRef = useRef<HTMLDivElement>(null);
   const productQueryVersion = useRef(0);
   const loadingMoreRef = useRef(false);
@@ -180,6 +182,16 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const source = params.get("source") ?? "";
+    const currentJob = params.get("currentJob") ?? "";
+    const previousJob = params.get("previousJob") ?? "";
+    if (!currentJob || !previousJob || !["daka", "damasco", "multimax", "ivoo", "venelectronics"].includes(source)) return;
+    setReportComparison({ source, currentJob, previousJob });
+    setPriceTab(source === "daka" ? "changes" : "damasco");
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -275,6 +287,10 @@ export default function Dashboard() {
       threshold: changeThreshold,
       status: changeStatus
     });
+    if (reportComparison?.source === "daka") {
+      params.set("currentJob", reportComparison.currentJob);
+      params.set("previousJob", reportComparison.previousJob);
+    }
 
     setChangesLoading(true);
     setChangeLoadError(null);
@@ -301,7 +317,7 @@ export default function Dashboard() {
       });
 
     return () => controller.abort();
-  }, [changeDays, changeMovement, changeStatus, changeThreshold, debouncedSearch, priceTab]);
+  }, [changeDays, changeMovement, changeStatus, changeThreshold, debouncedSearch, priceTab, reportComparison]);
 
   const loadMoreChanges = useCallback(async () => {
     if (loadingMoreChanges || changesLoading || !hasMoreChanges) return;
@@ -316,6 +332,10 @@ export default function Dashboard() {
       threshold: changeThreshold,
       status: changeStatus
     });
+    if (reportComparison?.source === "daka") {
+      params.set("currentJob", reportComparison.currentJob);
+      params.set("previousJob", reportComparison.previousJob);
+    }
     try {
       const response = await fetch(`/api/price-changes?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Changes unavailable");
@@ -330,7 +350,7 @@ export default function Dashboard() {
     } finally {
       if (version === changeQueryVersion.current) setLoadingMoreChanges(false);
     }
-  }, [changeDays, changeMovement, changeProducts.length, changeStatus, changeThreshold, changesLoading, debouncedSearch, hasMoreChanges, loadingMoreChanges]);
+  }, [changeDays, changeMovement, changeProducts.length, changeStatus, changeThreshold, changesLoading, debouncedSearch, hasMoreChanges, loadingMoreChanges, reportComparison]);
 
   useEffect(() => {
     const hasActiveExecution = latestRequest?.status === "queued" || latestRequest?.status === "running" || jobs.some((job) => job.status === "running");
@@ -531,7 +551,8 @@ export default function Dashboard() {
             </article>
           </section>
           </> : priceTab === "changes" ? <>
-            <section className="filters change-filters"><input aria-label="Buscar producto con cambios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Período de cambios" value={changeDays} onChange={(event) => setChangeDays(event.target.value)}><option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select aria-label="Tipo de movimiento" value={changeMovement} onChange={(event) => setChangeMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select aria-label="Magnitud mínima" value={changeThreshold} onChange={(event) => setChangeThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select aria-label="Estado del catálogo" value={changeStatus} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></section>
+            {reportComparison?.source === "daka" && <div className="report-comparison-banner"><strong>Comparación del reporte de Telegram</strong><span>Se muestran exclusivamente las variaciones entre las dos capturas indicadas en la notificación.</span></div>}
+            <section className="filters change-filters"><input aria-label="Buscar producto con cambios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Período de cambios" value={reportComparison?.source === "daka" ? "report" : changeDays} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeDays(event.target.value)}>{reportComparison?.source === "daka" && <option value="report">Capturas del reporte</option>}<option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select aria-label="Tipo de movimiento" value={changeMovement} onChange={(event) => setChangeMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select aria-label="Magnitud mínima" value={changeThreshold} onChange={(event) => setChangeThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select aria-label="Estado del catálogo" value={changeStatus} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></section>
             <section className="changes-summary"><article><span>Productos con cambios</span><strong>{changesLoading ? "…" : integer.format(changeStats.productsChanged)}</strong></article><article><span>Movimientos registrados</span><strong>{changesLoading ? "…" : integer.format(changeStats.totalChanges)}</strong></article><article className="drop"><span>Rebajas</span><strong>{changesLoading ? "…" : integer.format(changeStats.drops)}</strong></article><article className="rise"><span>Aumentos</span><strong>{changesLoading ? "…" : integer.format(changeStats.increases)}</strong></article></section>
             <section className="changes-grid">
               <article className="changes-table-card"><div className="section-head"><h2>Cambios encontrados</h2><small>{changesLoading ? "Consultando histórico…" : `Mostrando ${integer.format(changeProducts.length)} de ${integer.format(changeTotal)} productos`}</small></div>
@@ -544,7 +565,7 @@ export default function Dashboard() {
                   <div className="history-table"><div className="section-head"><h2>Movimientos individuales</h2><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los movimientos del período" : "No existen movimientos con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
               </article>
             </section>
-          </> : priceTab === "damasco" ? <DamascoCatalog/> : <CompetitorComparison/>}
+          </> : priceTab === "damasco" ? <DamascoCatalog reportComparison={reportComparison}/> : <CompetitorComparison/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax, IVOO y Venelectronics</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage">Fase 5 · Venelectronics</span></div></section>
         </main>
       ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} canAdmin={currentRole === "admin"} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}

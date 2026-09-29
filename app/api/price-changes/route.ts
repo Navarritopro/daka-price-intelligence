@@ -21,6 +21,116 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
     const searchLike = `%${search}%`;
+    const currentJob = request.nextUrl.searchParams.get("currentJob")?.trim() ?? "";
+    const previousJob = request.nextUrl.searchParams.get("previousJob")?.trim() ?? "";
+
+    if (Boolean(currentJob) !== Boolean(previousJob)) {
+      return NextResponse.json({ error: "La comparación requiere ambas ejecuciones" }, { status: 400 });
+    }
+
+    if (currentJob && previousJob) {
+      const exactRows = await sql`
+        WITH selected_source AS (
+          SELECT id FROM sources WHERE slug = ${source}
+        ), valid_jobs AS (
+          SELECT
+            COUNT(*) FILTER (WHERE j.id::text = ${currentJob})::int AS current_count,
+            COUNT(*) FILTER (WHERE j.id::text = ${previousJob})::int AS previous_count
+          FROM scraping_jobs j
+          WHERE j.source_id = (SELECT id FROM selected_source)
+            AND j.status = 'success'
+            AND j.id::text IN (${currentJob}, ${previousJob})
+        ), current_prices AS (
+          SELECT ph.product_id, ph.price_usd, ph.scraped_at
+          FROM price_history ph
+          JOIN products cp ON cp.id = ph.product_id
+          WHERE ph.job_id::text = ${currentJob}
+            AND cp.source_id = (SELECT id FROM selected_source)
+            AND (SELECT current_count FROM valid_jobs) = 1
+        ), previous_prices AS (
+          SELECT ph.product_id, ph.price_usd
+          FROM price_history ph
+          JOIN products pp ON pp.id = ph.product_id
+          WHERE ph.job_id::text = ${previousJob}
+            AND pp.source_id = (SELECT id FROM selected_source)
+            AND (SELECT previous_count FROM valid_jobs) = 1
+        ), exact_changes AS (
+          SELECT
+            cp.product_id,
+            pp.price_usd AS previous_price,
+            cp.price_usd,
+            cp.scraped_at,
+            cp.price_usd - pp.price_usd AS difference_usd,
+            ROUND(((cp.price_usd - pp.price_usd) / NULLIF(pp.price_usd, 0)) * 100, 2) AS change_pct
+          FROM current_prices cp
+          JOIN previous_prices pp ON pp.product_id = cp.product_id
+          WHERE cp.price_usd IS NOT NULL
+            AND pp.price_usd IS NOT NULL
+            AND pp.price_usd <> 0
+            AND cp.price_usd IS DISTINCT FROM pp.price_usd
+        ), eligible_changes AS (
+          SELECT ec.*
+          FROM exact_changes ec
+          JOIN products p ON p.id = ec.product_id
+          WHERE ABS(ec.change_pct) >= ${threshold}
+            AND (
+              ${movement} = 'all'
+              OR (${movement} = 'down' AND ec.difference_usd < 0)
+              OR (${movement} = 'up' AND ec.difference_usd > 0)
+            )
+            AND (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
+              OR COALESCE(p.brand, '') ILIKE ${searchLike}
+              OR COALESCE(p.model, '') ILIKE ${searchLike})
+        )
+        SELECT
+          p.id, p.external_id, p.name, p.category, p.url, p.last_seen_at,
+          p.brand, p.model,
+          1::int AS change_count,
+          ec.previous_price AS initial_price,
+          ec.price_usd AS final_price,
+          ec.scraped_at AS latest_change_at,
+          ABS(ec.change_pct) AS largest_change_pct,
+          ec.difference_usd AS net_difference_usd,
+          ec.change_pct AS net_change_pct,
+          COUNT(*) OVER()::int AS total_count,
+          COUNT(*) OVER()::int AS total_changes,
+          COUNT(*) FILTER (WHERE ec.difference_usd < 0) OVER()::int AS drops,
+          COUNT(*) FILTER (WHERE ec.difference_usd > 0) OVER()::int AS increases,
+          TRUE AS seen_in_latest
+        FROM eligible_changes ec
+        JOIN products p ON p.id = ec.product_id
+        ORDER BY ABS(ec.change_pct) DESC, p.id ASC
+        LIMIT ${limit}
+        OFFSET ${offset}
+      `;
+
+      const items = exactRows.map((row) => ({
+        id: asNumber(row.id), externalId: row.external_id, name: row.name,
+        category: row.category, url: row.url,
+        currentPrice: row.final_price == null ? null : asNumber(row.final_price),
+        previousPrice: row.initial_price == null ? null : asNumber(row.initial_price),
+        changePct: row.net_change_pct == null ? null : asNumber(row.net_change_pct),
+        scrapedAt: row.latest_change_at ?? null, seenInLatest: true,
+        lastSeenAt: row.last_seen_at ?? null, changeCount: 1,
+        initialPrice: row.initial_price == null ? null : asNumber(row.initial_price),
+        finalPrice: row.final_price == null ? null : asNumber(row.final_price),
+        netDifferenceUsd: row.net_difference_usd == null ? null : asNumber(row.net_difference_usd),
+        netChangePct: row.net_change_pct == null ? null : asNumber(row.net_change_pct),
+        largestChangePct: row.largest_change_pct == null ? null : asNumber(row.largest_change_pct),
+        latestChangeAt: row.latest_change_at ?? null, brand: row.brand ?? null, model: row.model ?? null
+      }));
+      const total = exactRows.length ? asNumber(exactRows[0].total_count) : 0;
+      return NextResponse.json({
+        items, total, offset, limit, hasMore: offset + items.length < total,
+        comparison: { source, currentJob, previousJob },
+        stats: {
+          productsChanged: total,
+          totalChanges: exactRows.length ? asNumber(exactRows[0].total_changes) : 0,
+          drops: exactRows.length ? asNumber(exactRows[0].drops) : 0,
+          increases: exactRows.length ? asNumber(exactRows[0].increases) : 0
+        }
+      });
+    }
 
     const rows = await sql`
       WITH selected_source AS (

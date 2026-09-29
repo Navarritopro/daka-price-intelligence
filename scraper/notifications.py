@@ -40,16 +40,21 @@ def build_messages(alerts: list[dict]) -> tuple[str, str]:
     return "\n\n".join(text_lines), html_message
 
 
-def send_telegram(text: str) -> bool:
+def send_telegram(text: str, *, buttons: list[dict[str, str]] | None = None) -> bool:
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         return False
     chunks = [text[index:index + 3900] for index in range(0, len(text), 3900)]
-    for chunk in chunks:
+    for index, chunk in enumerate(chunks):
+        payload = {"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True}
+        if buttons and index == len(chunks) - 1:
+            payload["reply_markup"] = {
+                "inline_keyboard": [[{"text": button["text"], "url": button["url"]}] for button in buttons]
+            }
         response = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": chunk, "disable_web_page_preview": True},
+            json=payload,
             timeout=20,
         )
         response.raise_for_status()
