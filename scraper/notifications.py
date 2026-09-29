@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import html
 import os
+import re
 import smtplib
+import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -54,7 +56,7 @@ def send_telegram(text: str) -> bool:
     return True
 
 
-def send_email(html_message: str, alert_count: int) -> bool:
+def send_email(html_message: str, alert_count: int, *, subject: str | None = None) -> bool:
     host = os.getenv("SMTP_HOST")
     user = os.getenv("SMTP_USER")
     password = os.getenv("SMTP_PASSWORD")
@@ -64,7 +66,7 @@ def send_email(html_message: str, alert_count: int) -> bool:
         return False
     port = int(os.getenv("SMTP_PORT", "465"))
     message = MIMEMultipart("alternative")
-    message["Subject"] = f"DAKA Price Lab · {alert_count} cambios de precio"
+    message["Subject"] = subject or f"DAKA Price Lab · {alert_count} cambios de precio"
     message["From"] = sender
     message["To"] = ", ".join(recipients)
     message.attach(MIMEText(html_message, "html", "utf-8"))
@@ -72,3 +74,47 @@ def send_email(html_message: str, alert_count: int) -> bool:
         server.login(user, password)
         server.sendmail(sender, recipients, message.as_string())
     return True
+
+
+def _safe_error(error: Exception) -> str:
+    """Remove credentials from errors before they leave the runtime."""
+    message = f"{type(error).__name__}: {error}"
+    message = re.sub(
+        r"(postgres(?:ql)?://)([^@\s]+)@",
+        r"\1***@",
+        message,
+        flags=re.IGNORECASE,
+    )
+    return message[:700]
+
+
+def notify_failure(source: str, error: Exception, trigger_type: str) -> dict[str, bool]:
+    """Send a best-effort failure alert without masking the original failure."""
+    safe_error = _safe_error(error)
+    source_label = source.strip() or "Scraper"
+    text_message = (
+        f"🚨 DAKA Price Lab · fallo en {source_label}\n\n"
+        f"Origen: {trigger_type}\n"
+        f"Detalle: {safe_error}\n\n"
+        "Revise el monitoreo técnico y los logs de la ejecución."
+    )
+    html_message = (
+        f"<h2>Fallo en {html.escape(source_label)}</h2>"
+        f"<p><strong>Origen:</strong> {html.escape(trigger_type)}</p>"
+        f"<p><strong>Detalle:</strong> {html.escape(safe_error)}</p>"
+        "<p>Revise el monitoreo técnico y los logs de la ejecución.</p>"
+    )
+    result = {"telegram": False, "email": False}
+    try:
+        result["telegram"] = send_telegram(text_message)
+    except Exception as notification_error:
+        print(f"No se pudo enviar la alerta por Telegram: {notification_error}", file=sys.stderr)
+    try:
+        result["email"] = send_email(
+            html_message,
+            0,
+            subject=f"DAKA Price Lab · fallo en {source_label}",
+        )
+    except Exception as notification_error:
+        print(f"No se pudo enviar la alerta por correo: {notification_error}", file=sys.stderr)
+    return result

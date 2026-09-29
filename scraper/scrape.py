@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright
 
 from database import Database
 from matching import infer_brand, model_tokens, refresh_all_matches
-from notifications import build_messages, send_email, send_telegram
+from notifications import build_messages, notify_failure, send_email, send_telegram
 from utils import extract_sap, parse_price
 
 BASE_URL = "https://tiendasdaka.com/ve/store"
@@ -201,7 +201,12 @@ def main() -> int:
         trigger_type = "local"
     threshold = Decimal(os.getenv("ALERT_THRESHOLD_PERCENT", "5"))
     database = Database(database_url)
-    job_id = database.create_job(trigger_type)
+    try:
+        job_id = database.create_job(trigger_type)
+    except Exception as exc:
+        print(f"No se pudo iniciar la ejecución: {type(exc).__name__}: {exc}", file=sys.stderr)
+        notify_failure("Daka", exc, trigger_type)
+        return 1
     scraper = DakaScraper(
         progress_callback=lambda found, pages, logs: database.update_job_progress(
             job_id, products_found=found, pages_scanned=pages, logs=logs
@@ -215,7 +220,7 @@ def main() -> int:
             job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
             logs=scraper.logs,
         )
-        scraper.log("Guardando catálogo e histórico en Neon")
+        scraper.log("Guardando catálogo e histórico en PostgreSQL")
         saved = database.save_products(
             job_id,
             products,
@@ -259,6 +264,9 @@ def main() -> int:
         return 0
     except Exception as exc:
         scraper.log(f"Ejecución fallida: {type(exc).__name__}: {exc}", "error")
+        channels = notify_failure("Daka", exc, trigger_type)
+        if any(channels.values()):
+            scraper.log("Alerta de fallo enviada", "warning")
         try:
             database.finish_job(
                 job_id, status="failed", products_found=len(products), products_saved=saved,

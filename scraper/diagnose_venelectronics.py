@@ -9,7 +9,7 @@ def main() -> int:
     print(f"[OK] {len(products)} productos recibidos; {len(priced)} con precio público USD.")
     for product in priced[:5]:
         print(f"[MUESTRA] {product.external_id} | USD {product.price_usd} | {product.name}")
-    print("[OK] Diagnóstico de solo lectura: no se escribió información en Neon.")
+    print("[OK] Diagnóstico de solo lectura: no se escribió información en PostgreSQL.")
     return 0
 
 

@@ -15,6 +15,14 @@ import venelectronics
 
 
 class DailyCaptureGuardTests(unittest.TestCase):
+    @patch("damasco.notify_failure")
+    @patch("damasco.Database")
+    def test_database_start_failure_sends_alert(self, database_class, notify_failure):
+        database_class.return_value.has_successful_job_today.side_effect = RuntimeError("database offline")
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://test", "TRIGGER_TYPE": "scheduled"}):
+            self.assertEqual(damasco.main(), 1)
+        notify_failure.assert_called_once()
+
     @patch("damasco.Database")
     def test_damasco_scheduled_backup_skips_existing_daily_success(self, database_class):
         database_class.return_value.has_successful_job_today.return_value = True

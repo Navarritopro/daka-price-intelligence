@@ -13,6 +13,7 @@ import requests
 
 from database import Database
 from matching import model_tokens, refresh_damasco_matches
+from notifications import notify_failure
 
 
 API_URL = "https://www.damascovzla.com/api/catalog_system/pub/products/search"
@@ -188,13 +189,18 @@ def main() -> int:
     if trigger_type not in {"scheduled", "manual", "local"}:
         trigger_type = "scheduled"
     database = Database(database_url, source_slug="damasco")
-    if trigger_type == "scheduled" and database.has_successful_job_today():
-        print(
-            "[OMITIDO] Damasco ya tiene una captura exitosa de hoy en hora de Venezuela.",
-            flush=True,
-        )
-        return 0
-    job_id = database.create_job(trigger_type)
+    try:
+        if trigger_type == "scheduled" and database.has_successful_job_today():
+            print(
+                "[OMITIDO] Damasco ya tiene una captura exitosa de hoy en hora de Venezuela.",
+                flush=True,
+            )
+            return 0
+        job_id = database.create_job(trigger_type)
+    except Exception as exc:
+        print(f"No se pudo iniciar Damasco: {type(exc).__name__}: {exc}", file=sys.stderr)
+        notify_failure("Damasco", exc, trigger_type)
+        return 1
     scraper = DamascoScraper(
         progress_callback=lambda found, pages, logs: database.update_job_progress(
             job_id, products_found=found, pages_scanned=pages, logs=logs
@@ -208,7 +214,7 @@ def main() -> int:
             job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
             logs=scraper.logs,
         )
-        scraper.log("Guardando catálogo e histórico de Damasco en Neon")
+        scraper.log("Guardando catálogo e histórico de Damasco en PostgreSQL")
         saved = database.save_products(
             job_id,
             products,
@@ -243,6 +249,9 @@ def main() -> int:
         return 0
     except Exception as exc:
         scraper.log(f"Ejecución Damasco fallida: {type(exc).__name__}: {exc}", "error")
+        channels = notify_failure("Damasco", exc, trigger_type)
+        if any(channels.values()):
+            scraper.log("Alerta de fallo enviada", "warning")
         try:
             database.finish_job(
                 job_id, status="failed", products_found=len(products), products_saved=saved,

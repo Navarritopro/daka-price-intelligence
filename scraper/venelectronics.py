@@ -12,6 +12,7 @@ import requests
 
 from database import Database
 from matching import infer_brand, model_tokens, product_type, refresh_competitor_matches
+from notifications import notify_failure
 
 
 BASE_URL = "https://venelectronics.com"
@@ -238,17 +239,22 @@ def main() -> int:
     if trigger_type not in {"scheduled", "manual", "local"}:
         trigger_type = "scheduled"
     database = Database(database_url, source_slug="venelectronics")
-    if trigger_type == "scheduled" and database.has_successful_job_today():
-        print("[OMITIDO] Venelectronics ya tiene una captura exitosa de hoy en hora de Venezuela.", flush=True)
-        return 0
-    job_id = database.create_job(trigger_type)
+    try:
+        if trigger_type == "scheduled" and database.has_successful_job_today():
+            print("[OMITIDO] Venelectronics ya tiene una captura exitosa de hoy en hora de Venezuela.", flush=True)
+            return 0
+        job_id = database.create_job(trigger_type)
+    except Exception as exc:
+        print(f"No se pudo iniciar Venelectronics: {type(exc).__name__}: {exc}", file=sys.stderr)
+        notify_failure("Venelectronics", exc, trigger_type)
+        return 1
     scraper = VenelectronicsScraper(progress_callback=lambda found, pages, logs: database.update_job_progress(
         job_id, products_found=found, pages_scanned=pages, logs=logs))
     products: list[Product] = []
     saved = 0
     try:
         products = scraper.run()
-        scraper.log("Guardando catálogo e histórico de Venelectronics en Neon")
+        scraper.log("Guardando catálogo e histórico de Venelectronics en PostgreSQL")
         saved = database.save_products(job_id, products, progress_callback=lambda saved_count: database.update_job_progress(
             job_id, products_found=len(products), pages_scanned=scraper.pages_scanned,
             products_saved=saved_count, logs=scraper.logs))
@@ -263,6 +269,9 @@ def main() -> int:
         return 0
     except Exception as exc:
         scraper.log(f"Ejecución Venelectronics fallida: {type(exc).__name__}: {exc}", "error")
+        channels = notify_failure("Venelectronics", exc, trigger_type)
+        if any(channels.values()):
+            scraper.log("Alerta de fallo enviada", "warning")
         try:
             database.finish_job(job_id, status="failed", products_found=len(products), products_saved=saved,
                                 products_without_sku=0, pages_scanned=scraper.pages_scanned,
