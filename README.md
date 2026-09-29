@@ -6,7 +6,7 @@ Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el
 
 - Scraping de Tiendas Daka mediante Playwright.
 - Histórico por producto con precio USD y fecha/hora exactas.
-- Ejecución programada diariamente a las **8:00 AM, hora Venezuela**.
+- Ejecución local de Daka programada diariamente a las **9:00 AM, hora Venezuela**.
 - Ejecución manual desde el panel.
 - Alertas por correo electrónico y Telegram.
 - Panel comercial de inteligencia de precios.
@@ -18,11 +18,12 @@ Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el
 | Componente | Servicio | Responsabilidad |
 |---|---|---|
 | Panel y API | Vercel + Next.js | Consulta de precios, históricos, jobs y ejecución manual |
-| Base de datos | PostgreSQL / Neon | Productos, capturas, alertas y ejecuciones |
-| Scraper | GitHub Actions + Python + Playwright | Extracción diaria o manual |
+| Base de datos | DigitalOcean Managed PostgreSQL | Productos, capturas, alertas y ejecuciones |
+| Scraper Daka | Windows + Python + Playwright | Extracción diaria desde la PC operativa |
+| Scrapers competidores | GitHub Actions + Python | Extracción diaria con intentos de respaldo |
 | Alertas | SMTP + Telegram Bot API | Notificación de variaciones superiores al umbral |
 
-El scraper no se ejecuta dentro de Vercel. GitHub Actions dispone del tiempo y del navegador necesarios para recorrer el catálogo completo. Vercel únicamente consulta PostgreSQL y dispara el workflow manual.
+Los scrapers no se ejecutan dentro de Vercel. Daka se programa en la PC operativa mediante el Programador de tareas de Windows; los competidores usan GitHub Actions. Vercel únicamente consulta PostgreSQL.
 
 ## Estructura
 
@@ -33,12 +34,12 @@ db/schema.sql                Modelo PostgreSQL e índices
 scraper/scrape.py            Extracción y normalización
 scraper/database.py          Persistencia y comparación
 scraper/notifications.py     Correo y Telegram
-.github/workflows/scrape.yml Programación diaria y ejecución manual
+.github/workflows/scrape.yml Ejecución manual de diagnóstico para Daka
 ```
 
 ## 1. Crear la base de datos
 
-1. Crear un proyecto PostgreSQL en Neon.
+1. Crear un clúster PostgreSQL administrado en DigitalOcean.
 2. Abrir el editor SQL.
 3. Ejecutar íntegramente `db/schema.sql`.
 4. Copiar la cadena de conexión con SSL.
@@ -64,7 +65,7 @@ En **Settings → Secrets and variables → Actions → Secrets**:
 
 | Nombre | Contenido |
 |---|---|
-| `DATABASE_URL` | Cadena PostgreSQL de Neon |
+| `DATABASE_URL` | Cadena PostgreSQL de DigitalOcean con `sslmode=require` |
 | `TELEGRAM_BOT_TOKEN` | Token generado por BotFather |
 | `TELEGRAM_CHAT_ID` | Chat o grupo que recibirá las alertas |
 | `SMTP_USER` | Usuario SMTP |
@@ -82,7 +83,7 @@ En la sección **Variables**:
 | `ALERT_EMAIL_FROM` | `alertas@empresa.com` |
 | `ALERT_EMAIL_TO` | `destino1@empresa.com,destino2@empresa.com` |
 
-El cron está definido como `0 12 * * *`: GitHub Actions utiliza UTC y Venezuela se mantiene en UTC-4, por lo que corresponde a las 8:00 AM VET.
+Daka no tiene cron en GitHub. Su horario automático se mantiene en el Programador de tareas de Windows a las 9:00 AM VET. GitHub conserva una ejecución manual para diagnóstico.
 
 ## 3. Preparar la ejecución manual
 
@@ -109,10 +110,10 @@ La clave `ADMIN_API_KEY` protege el endpoint manual. El usuario la ingresa al pu
 
 ## 5. Primera ejecución
 
-1. Ir a **Actions → Scraping diario Daka**.
-2. Seleccionar **Run workflow**.
-3. Confirmar que el job termine en verde.
-4. Abrir la aplicación en Vercel y verificar el catálogo y el monitoreo técnico.
+1. Ejecutar la tarea local de Daka desde el Programador de tareas.
+2. Confirmar código de resultado `0x0`.
+3. Abrir `/api/health` y verificar `{"status":"ok","database":"connected"}`.
+4. Revisar el catálogo y el monitoreo técnico en la aplicación.
 
 ## Desarrollo local
 
@@ -139,12 +140,13 @@ python scraper/scrape.py
 - Rotar `ADMIN_API_KEY` y `GITHUB_TOKEN` si se comparten accidentalmente.
 - Usar un token de GitHub limitado a un solo repositorio.
 - Mantener la base de datos con SSL obligatorio.
+- Consultar el [runbook operativo](docs/operations-runbook.md) para validación diaria, fallos y recuperación.
 
 ## Fase 2
 
 La primera integración competitiva incorpora Damasco mediante su catálogo público VTEX:
 
-1. Ejecutar `db/phase2_damasco.sql` una sola vez en Neon.
+1. Ejecutar `db/phase2_damasco.sql` una sola vez en PostgreSQL.
 2. Publicar `.github/workflows/scrape-damasco.yml` y los nuevos archivos del scraper.
 3. Ejecutar manualmente **Scraping diario Damasco** desde GitHub Actions para crear la primera captura.
 4. Abrir la pestaña **Competidores** del dashboard.
@@ -158,8 +160,8 @@ IVOO se integra desde su catálogo público GraphQL. El precio almacenado provie
 no se mezclan cuotas ni modalidades de financiamiento.
 
 1. Publicar los archivos de la integración.
-2. Ejecutar **Probar conectividad IVOO**. Consulta solo una página y no escribe en Neon.
-3. Si la prueba termina en verde, ejecutar `db/phase4_ivoo.sql` una sola vez en Neon.
+2. Ejecutar **Probar conectividad IVOO**. Consulta solo una página y no escribe en PostgreSQL.
+3. Si la prueba termina en verde, ejecutar `db/phase4_ivoo.sql` una sola vez en PostgreSQL.
 4. Ejecutar manualmente **Scraping diario IVOO** para crear la primera captura.
 5. Verificar IVOO en catálogo, monitoreo, comparador y revisión de homologaciones.
 6. Crear en GitHub Actions la variable `IVOO_ENABLED=true` para habilitar los horarios automáticos.
@@ -178,8 +180,8 @@ sin guardar productos parciales.
 Despliegue controlado:
 
 1. Publicar los archivos de la fase 5.
-2. Ejecutar **Probar conectividad Venelectronics**. Consulta una página y no escribe en Neon.
-3. Si la prueba termina en verde, ejecutar `db/phase5_venelectronics.sql` una sola vez en Neon.
+2. Ejecutar **Probar conectividad Venelectronics**. Consulta una página y no escribe en PostgreSQL.
+3. Si la prueba termina en verde, ejecutar `db/phase5_venelectronics.sql` una sola vez en PostgreSQL.
 4. Ejecutar manualmente **Scraping diario Venelectronics** para crear la primera captura.
 5. Validar catálogo, precios, monitoreo, comparador y candidatos de homologación.
 6. Crear la variable de GitHub Actions `VENELECTRONICS_ENABLED=true`.
