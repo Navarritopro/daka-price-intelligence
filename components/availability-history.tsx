@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AvailabilitySource } from "@/components/competitor-availability";
 
 type Metric = "products" | "units";
@@ -105,12 +105,48 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
   const [selected, setSelected] = useState<HistoryItem | null>(null);
   const [productHistory, setProductHistory] = useState<ProductHistory | null>(null);
   const [productLoading, setProductLoading] = useState(false);
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const drawerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => window.clearTimeout(timer);
   }, [search]);
   useEffect(() => { setCategory(""); setSelected(null); }, [source]);
+
+  const closeDetail = useCallback(() => {
+    setSelected(null);
+    const trigger = detailTriggerRef.current;
+    window.setTimeout(() => trigger?.focus(), 0);
+  }, []);
+
+  const openDetail = useCallback((item: HistoryItem, trigger: HTMLButtonElement) => {
+    detailTriggerRef.current = trigger;
+    setSelected(item);
+  }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeDetail();
+      if (event.key === "Tab" && drawerRef.current) {
+        const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+        if (!focusable.length) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeDetail, selected]);
 
   const parameters = useCallback((offset: number) => {
     const params = new URLSearchParams({ source, days, search: debouncedSearch, category, movement, limit: String(BATCH_SIZE), offset: String(offset) });
@@ -217,16 +253,22 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
 
     <article className="availability-table-card">
       <div className="section-head"><div><h2>Comportamiento por producto</h2><small>{loading ? "Analizando capturas…" : `Mostrando ${integer.format(items.length)} de ${integer.format(page?.total ?? 0)}`}</small></div></div>
-      {loading ? <div className="empty-state">Comparando el periodo seleccionado…</div> : !items.length ? <div className="empty-state">No existen productos con estos filtros.</div> : <div className="table-scroll"><table className="availability-history-table"><thead><tr><th>Producto</th><th>Fuente</th><th>Inicio</th><th>Cierre</th><th>Mínimo</th><th>Máximo</th><th>Variación</th><th>Movimiento</th><th>Detalle</th></tr></thead><tbody>{items.map((item) => <tr key={`${item.source}-${item.id}`}><td><a href={item.url} target="_blank" rel="noreferrer">{item.name}</a><small>Ref. {item.externalId}{item.category ? ` · ${item.category}` : ""}</small></td><td><span className={`availability-source ${item.source}`}>{item.sourceName}</span></td><td>{quantity(item.firstQuantity, item.firstAvailable)}<small>{formatDay(item.firstDate)}</small></td><td>{quantity(item.latestQuantity, item.latestAvailable)}<small>{formatDay(item.latestDate)}</small></td><td>{item.minimumQuantity == null ? "—" : integer.format(item.minimumQuantity)}</td><td>{item.maximumQuantity == null ? "—" : integer.format(item.maximumQuantity)}</td><td className={item.quantityDifference == null ? "neutral" : item.quantityDifference > 0 ? "availability-positive" : item.quantityDifference < 0 ? "availability-negative" : "neutral"}><strong>{item.quantityDifference == null ? "—" : `${item.quantityDifference > 0 ? "+" : ""}${integer.format(item.quantityDifference)}`}</strong><small>{integer.format(item.captureDays)} días con captura</small></td><td><span className={`availability-movement ${item.movement}`}>{movementLabels[item.movement]}</span></td><td><button className="availability-detail-button" onClick={() => setSelected(item)}>Ver histórico</button></td></tr>)}</tbody></table></div>}
+      {loading ? <div className="empty-state">Comparando el periodo seleccionado…</div> : !items.length ? <div className="empty-state">No existen productos con estos filtros.</div> : <div className="table-scroll"><table className="availability-history-table"><thead><tr><th>Producto</th><th>Fuente</th><th>Inicio</th><th>Cierre</th><th>Mínimo</th><th>Máximo</th><th>Variación</th><th>Movimiento</th><th>Detalle</th></tr></thead><tbody>{items.map((item) => <tr key={`${item.source}-${item.id}`} className={selected?.id === item.id ? "selected-availability-row" : ""}><td><a href={item.url} target="_blank" rel="noreferrer">{item.name}</a><small>Ref. {item.externalId}{item.category ? ` · ${item.category}` : ""}</small></td><td><span className={`availability-source ${item.source}`}>{item.sourceName}</span></td><td>{quantity(item.firstQuantity, item.firstAvailable)}<small>{formatDay(item.firstDate)}</small></td><td>{quantity(item.latestQuantity, item.latestAvailable)}<small>{formatDay(item.latestDate)}</small></td><td>{item.minimumQuantity == null ? "—" : integer.format(item.minimumQuantity)}</td><td>{item.maximumQuantity == null ? "—" : integer.format(item.maximumQuantity)}</td><td className={item.quantityDifference == null ? "neutral" : item.quantityDifference > 0 ? "availability-positive" : item.quantityDifference < 0 ? "availability-negative" : "neutral"}><strong>{item.quantityDifference == null ? "—" : `${item.quantityDifference > 0 ? "+" : ""}${integer.format(item.quantityDifference)}`}</strong><small>{integer.format(item.captureDays)} días con captura</small></td><td><span className={`availability-movement ${item.movement}`}>{movementLabels[item.movement]}</span></td><td><button className="availability-detail-button" aria-haspopup="dialog" aria-expanded={selected?.id === item.id} onClick={(event) => openDetail(item, event.currentTarget)}>Ver evolución</button></td></tr>)}</tbody></table></div>}
       <div className="changes-load-more">{page?.hasMore ? <button onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Cargando…" : "Cargar 50 productos más"}</button> : items.length ? <span>Se mostraron todos los productos con estos filtros</span> : null}</div>
     </article>
 
-    {selected && <article className="availability-product-detail">
-      <div className="availability-product-detail-head"><div><span className={`availability-source ${selected.source}`}>{selected.sourceName}</span><h2>{selected.name}</h2><small>Ref. {selected.externalId} · Evolución dentro del periodo seleccionado</small></div><button onClick={() => setSelected(null)} aria-label="Cerrar histórico del producto">Cerrar</button></div>
-      {productLoading ? <div className="empty-state">Cargando histórico del producto…</div> : !productHistory?.points.length ? <div className="empty-state">Este producto no tiene capturas en el periodo.</div> : <>
-        {detailChart.path && <svg className="availability-product-chart" viewBox="0 0 760 225" role="img" aria-label="Evolución de unidades del producto"><line className="chart-grid" x1="45" x2="735" y1="45" y2="45"/><line className="chart-grid" x1="45" x2="735" y1="115" y2="115"/><line className="chart-grid" x1="45" x2="735" y1="190" y2="190"/><path d={detailChart.path} fill="none" stroke={SOURCE_COLORS[selected.source]} strokeWidth="3"/>{detailChart.dots.map((dot) => <circle key={dot.point.date} cx={dot.x} cy={dot.y} r="4" fill="#fff" stroke={SOURCE_COLORS[selected.source]} strokeWidth="3"><title>{`${formatDay(dot.point.date)} · ${integer.format(dot.point.quantity)} unidades`}</title></circle>)}</svg>}
-        <div className="table-scroll"><table className="availability-product-history-table"><thead><tr><th>Fecha</th><th>Unidades reportadas</th><th>Variación</th><th>Estado</th></tr></thead><tbody>{[...productHistory.points].reverse().map((point) => <tr key={point.date}><td>{formatDay(point.date)}</td><td>{point.quantity == null ? "Sin cantidad" : integer.format(point.quantity)}</td><td className={point.difference == null ? "neutral" : point.difference > 0 ? "availability-positive" : point.difference < 0 ? "availability-negative" : "neutral"}>{point.difference == null ? "—" : `${point.difference > 0 ? "+" : ""}${integer.format(point.difference)}`}</td><td>{point.available === true ? "Disponible" : point.available === false ? "Sin stock" : "No determinado"}</td></tr>)}</tbody></table></div>
-      </>}
-    </article>}
+    {selected && <div className="availability-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDetail(); }}>
+      <aside ref={drawerRef} className="availability-product-drawer" role="dialog" aria-modal="true" aria-labelledby="availability-detail-title">
+        <div className="availability-product-detail-head"><div><span className={`availability-source ${selected.source}`}>{selected.sourceName}</span><h2 id="availability-detail-title">{selected.name}</h2><small>Ref. {selected.externalId}{selected.category ? ` · ${selected.category}` : ""}</small></div><button ref={closeButtonRef} onClick={closeDetail} aria-label="Cerrar evolución del producto">×</button></div>
+        <div className="availability-drawer-body">
+          <div className="availability-detail-actions"><span>Evolución dentro del periodo seleccionado</span><a href={selected.url} target="_blank" rel="noreferrer">Abrir producto en {selected.sourceName} ↗</a></div>
+          <div className="availability-detail-metrics"><div><span>Unidades iniciales</span><strong>{quantity(selected.firstQuantity, selected.firstAvailable)}</strong></div><div><span>Unidades actuales</span><strong>{quantity(selected.latestQuantity, selected.latestAvailable)}</strong></div><div><span>Variación neta</span><strong className={selected.quantityDifference == null ? "neutral" : selected.quantityDifference > 0 ? "availability-positive" : selected.quantityDifference < 0 ? "availability-negative" : "neutral"}>{selected.quantityDifference == null ? "—" : `${selected.quantityDifference > 0 ? "+" : ""}${integer.format(selected.quantityDifference)}`}</strong></div><div><span>Mínimo reportado</span><strong>{selected.minimumQuantity == null ? "—" : integer.format(selected.minimumQuantity)}</strong></div><div><span>Máximo reportado</span><strong>{selected.maximumQuantity == null ? "—" : integer.format(selected.maximumQuantity)}</strong></div><div><span>Días con captura</span><strong>{integer.format(selected.captureDays)}</strong></div></div>
+          {productLoading ? <div className="availability-detail-skeleton" aria-label="Cargando histórico"><span/><span/><span/></div> : !productHistory?.points.length ? <div className="empty-state">Este producto no tiene capturas de disponibilidad dentro del periodo seleccionado.</div> : <>
+            {detailChart.path && <div className="availability-detail-chart-wrap"><h3>Evolución de unidades</h3><svg className="availability-product-chart" viewBox="0 0 760 225" role="img" aria-label="Evolución de unidades del producto"><line className="chart-grid" x1="45" x2="735" y1="45" y2="45"/><line className="chart-grid" x1="45" x2="735" y1="115" y2="115"/><line className="chart-grid" x1="45" x2="735" y1="190" y2="190"/><path d={detailChart.path} fill="none" stroke={SOURCE_COLORS[selected.source]} strokeWidth="3"/>{detailChart.dots.map((dot) => <circle key={dot.point.date} cx={dot.x} cy={dot.y} r="4" fill="#fff" stroke={SOURCE_COLORS[selected.source]} strokeWidth="3"><title>{`${formatDay(dot.point.date)} · ${integer.format(dot.point.quantity)} unidades`}</title></circle>)}</svg></div>}
+            <div className="availability-captures-head"><h3>Capturas del periodo</h3><small>{integer.format(productHistory.points.length)} registros</small></div><div className="table-scroll"><table className="availability-product-history-table"><thead><tr><th>Fecha</th><th>Unidades reportadas</th><th>Variación</th><th>Estado</th></tr></thead><tbody>{[...productHistory.points].reverse().map((point) => <tr key={point.date}><td>{formatDay(point.date)}</td><td>{point.quantity == null ? "Sin cantidad" : integer.format(point.quantity)}</td><td className={point.difference == null ? "neutral" : point.difference > 0 ? "availability-positive" : point.difference < 0 ? "availability-negative" : "neutral"}>{point.difference == null ? "—" : `${point.difference > 0 ? "+" : ""}${integer.format(point.difference)}`}</td><td>{point.available === true ? "Disponible" : point.available === false ? "Sin stock" : "No determinado"}</td></tr>)}</tbody></table></div>
+          </>}
+        </div>
+      </aside>
+    </div>}
   </section>;
 }
