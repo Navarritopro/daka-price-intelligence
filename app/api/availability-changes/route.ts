@@ -3,13 +3,13 @@ import { asNumber, getSql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const COMPETITOR_SOURCES = ["damasco", "multimax", "ivoo", "venelectronics"] as const;
+const AVAILABILITY_SOURCES = ["daka", "damasco", "multimax", "ivoo", "venelectronics"] as const;
 const MOVEMENTS = ["all", "up", "down", "same", "restocked", "out", "unquantified", "no_baseline", "not_seen"] as const;
 
 export async function GET(request: NextRequest) {
   try {
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "all";
-    const source = requestedSource === "all" || COMPETITOR_SOURCES.includes(requestedSource as (typeof COMPETITOR_SOURCES)[number])
+    const source = requestedSource === "all" || AVAILABILITY_SOURCES.includes(requestedSource as (typeof AVAILABILITY_SOURCES)[number])
       ? requestedSource
       : "all";
     const requestedMovement = request.nextUrl.searchParams.get("movement")?.trim() ?? "all";
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       WITH selected_sources AS (
         SELECT id, slug, name
         FROM sources
-        WHERE slug IN ('damasco', 'multimax', 'ivoo', 'venelectronics')
+        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
           AND (${source} = 'all' OR slug = ${source})
       ), ranked_jobs AS (
         SELECT
@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
       WITH selected_sources AS (
         SELECT id, slug, name
         FROM sources
-        WHERE slug IN ('damasco', 'multimax', 'ivoo', 'venelectronics')
+        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
           AND (${source} = 'all' OR slug = ${source})
       ), ranked_jobs AS (
         SELECT
@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
       SELECT DISTINCT p.category
       FROM products p
       JOIN sources s ON s.id = p.source_id
-      WHERE s.slug IN ('damasco', 'multimax', 'ivoo', 'venelectronics')
+      WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
         AND (${source} = 'all' OR s.slug = ${source})
         AND p.category IS NOT NULL AND p.category <> ''
       ORDER BY p.category

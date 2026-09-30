@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import AvailabilityHistory from "@/components/availability-history";
 
-export type AvailabilitySource = "all" | "damasco" | "multimax" | "ivoo" | "venelectronics";
+export type AvailabilitySource = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics";
 
 type AvailabilityMovement = "up" | "down" | "same" | "restocked" | "out" | "unquantified" | "no_baseline" | "not_seen";
 type AvailabilityItem = {
@@ -79,7 +80,7 @@ const movementLabels: Record<AvailabilityMovement, string> = {
   not_seen: "No visto actualmente"
 };
 
-export default function CompetitorAvailability({ source }: { source: AvailabilitySource }) {
+function LatestAvailability({ source }: { source: AvailabilitySource }) {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [movement, setMovement] = useState("all");
@@ -160,10 +161,10 @@ export default function CompetitorAvailability({ source }: { source: Availabilit
 
   const periodLabel = comparisons.length === 1
     ? `${formatDate(comparisons[0].currentFinishedAt)} vs. ${formatDate(comparisons[0].previousFinishedAt)}`
-    : "Última ejecución exitosa vs. ejecución exitosa anterior de cada competidor";
+    : "Última ejecución exitosa vs. ejecución exitosa anterior de cada fuente";
 
   return <section className="competitor-availability">
-    <div className="availability-head"><div><span className="eyebrow-dark">Inteligencia competitiva · Inventario</span><h2>Variaciones de disponibilidad</h2><p>Compara la cantidad reportada en las dos últimas ejecuciones exitosas de cada competidor.</p></div><div><span>Comparación</span><strong>{periodLabel}</strong></div></div>
+    <div className="availability-head"><div><span className="eyebrow-dark">Inteligencia competitiva · Inventario</span><h2>Variaciones de disponibilidad</h2><p>Compara la cantidad reportada en las dos últimas ejecuciones exitosas de DAKA y sus competidores.</p></div><div><span>Comparación</span><strong>{periodLabel}</strong></div></div>
     <div className="availability-summary">
       <article><span>Productos comparados</span><strong>{loading ? "…" : integer.format(stats.productsCompared)}</strong></article>
       <article className="availability-up"><span>Aumentaron unidades</span><strong>{loading ? "…" : integer.format(stats.increased)}</strong></article>
@@ -183,4 +184,15 @@ export default function CompetitorAvailability({ source }: { source: Availabilit
       <div className="changes-load-more">{hasMore ? <button onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Cargando…" : "Cargar 50 productos más"}</button> : items.length ? <span>Se mostraron todos los productos con estos filtros</span> : null}</div>
     </article>
   </section>;
+}
+
+export default function CompetitorAvailability({ source }: { source: AvailabilitySource }) {
+  const [view, setView] = useState<"latest" | "history">("latest");
+  return <div className="availability-module">
+    <nav className="availability-view-tabs" aria-label="Vista de disponibilidad">
+      <button className={view === "latest" ? "active" : ""} onClick={() => setView("latest")}>Última comparación</button>
+      <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}>Histórico de disponibilidad</button>
+    </nav>
+    {view === "latest" ? <LatestAvailability source={source}/> : <AvailabilityHistory source={source}/>} 
+  </div>;
 }
