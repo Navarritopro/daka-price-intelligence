@@ -22,6 +22,7 @@ type CapturePage = {
   hasMore: boolean;
   minPrice: number | null;
   maxPrice: number | null;
+  changeCount: number;
 };
 type View = "prices" | "operations";
 type PriceTab = "explore" | "changes" | "damasco" | "competitors";
@@ -136,6 +137,7 @@ export default function Dashboard() {
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyMinPrice, setHistoryMinPrice] = useState<number | null>(null);
   const [historyMaxPrice, setHistoryMaxPrice] = useState<number | null>(null);
+  const [historyChangeCount, setHistoryChangeCount] = useState(0);
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -396,7 +398,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!selected) {
       setHistory([]); setHistoryTotal(0); setHistoryHasMore(false);
-      setHistoryMinPrice(null); setHistoryMaxPrice(null);
+      setHistoryMinPrice(null); setHistoryMaxPrice(null); setHistoryChangeCount(0);
       return;
     }
     const controller = new AbortController();
@@ -404,7 +406,7 @@ export default function Dashboard() {
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((page: CapturePage) => {
         setHistory(page.items); setHistoryTotal(page.total); setHistoryHasMore(page.hasMore);
-        setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice);
+        setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice); setHistoryChangeCount(page.changeCount);
       })
       .catch((requestError) => {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;
@@ -422,7 +424,7 @@ export default function Dashboard() {
       const page: CapturePage = await response.json();
       setHistory((current) => [...current, ...page.items]);
       setHistoryTotal(page.total); setHistoryHasMore(page.hasMore);
-      setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice);
+      setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice); setHistoryChangeCount(page.changeCount);
     } catch {
       setNotice("No fue posible cargar el siguiente grupo de capturas.");
       window.setTimeout(() => setNotice(null), 4500);
@@ -559,6 +561,7 @@ export default function Dashboard() {
   const executionBusy = running || requestWaiting || requestPreparing || latestDakaJob?.status === "running";
   const maxPrice = historyMaxPrice;
   const minPrice = historyMinPrice;
+  const latestCapture = history[0] ?? null;
   const selectedChange = changeProducts.find((product) => product.id === selected?.id) ?? null;
 
   return (
@@ -606,9 +609,10 @@ export default function Dashboard() {
             </div></article>
             <article className="detail-card">
               {selected ? <><div className="detail-main"><div className="detail-title"><div><h2>{selected.name}</h2><div className="meta"><span className="source-badge">D</span> Tiendas Daka · SAP {selected.externalId}</div>{!selected.seenInLatest && <div className="product-missing-notice">No fue visto en la última captura. Se muestra su último precio histórico.</div>}</div><div className="current-price"><span className="meta">{selected.seenInLatest ? "Precio actual" : "Último precio registrado"}</span><strong>{selected.currentPrice == null ? "Sin precio" : money.format(selected.currentPrice)}</strong><span className={`variation ${changeClass(selected.changePct)}`}>{selected.changePct == null ? "Sin comparación" : `${selected.changePct > 0 ? "+" : ""}${selected.changePct.toFixed(1)}% vs. captura anterior`}</span></div></div>
+                {historyMode && latestCapture && <div className="price-comparison-strip"><div><span>Precio anterior</span><strong>{latestCapture.previousPrice == null ? "Sin comparación" : money.format(latestCapture.previousPrice)}</strong></div><span className="comparison-arrow">→</span><div><span>Precio actual</span><strong>{latestCapture.price == null ? "Sin precio" : money.format(latestCapture.price)}</strong></div><div className={changeClass(latestCapture.differenceUsd)}><span>Último movimiento</span><strong>{latestCapture.differenceUsd == null ? "Sin variación" : `${latestCapture.differenceUsd > 0 ? "+" : ""}${money.format(latestCapture.differenceUsd)}`}</strong><small>{latestCapture.changePct == null ? "" : `${latestCapture.changePct > 0 ? "+" : ""}${latestCapture.changePct.toFixed(1)}%`}</small></div></div>}
                 {history.length ? <svg className="price-chart" viewBox="0 0 760 245" role="img" aria-label="Histórico de precio"><defs><linearGradient id="priceArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1258d9" stopOpacity=".2"/><stop offset="1" stopColor="#1258d9" stopOpacity="0"/></linearGradient></defs><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-area" d={chart.area}/><path className="chart-line" d={chart.line}/>{(historyMode ? chart.dots : chart.dots.slice(-1)).map((dot, index) => <circle key={`${dot.scrapedAt}-${index}`} className="chart-point" cx={dot.x} cy={dot.y} r={historyMode ? "4" : "5"}><title>{`${formatDate(dot.scrapedAt)} · ${money.format(dot.price)}`}</title></circle>)}</svg> : <div className="chart-empty">El gráfico aparecerá después de la primera captura.</div>}
-                <div className="mini-grid"><div><span>Precio máximo</span><b>{maxPrice == null ? "—" : money.format(maxPrice)}</b></div><div><span>Precio mínimo</span><b>{minPrice == null ? "—" : money.format(minPrice)}</b></div><div><span>Capturas totales</span><b>{integer.format(historyTotal)} registros</b></div><div><span>Última captura</span><b>{formatDate(selected.scrapedAt)}</b></div></div></div>
-                <div className="history-table"><div className="section-head"><h2>{historyMode ? "Todas las capturas del producto" : "Últimas capturas"}</h2><small>{historyMode ? `Mostrando ${integer.format(history.length)} de ${integer.format(historyTotal)} · incluye capturas sin variación` : "Fecha y hora exactas · VET"}</small></div><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio USD</th><th>Diferencia USD</th><th>Variación</th>{historyMode && <><th>Disponibilidad</th><th>Unidades reportadas</th></>}</tr></thead><tbody>{(historyMode ? history : history.slice(0, 10)).map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.price == null ? "Sin precio" : money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td>{historyMode && <><td>{point.inStock == null ? "No reportada" : point.inStock ? "Disponible" : "No disponible"}</td><td>{point.availableQuantity == null ? "No reportadas" : integer.format(point.availableQuantity)}</td></>}</tr>)}</tbody></table></div>{historyMode && <div className="changes-load-more">{historyHasMore ? <button onClick={() => void loadMoreHistory()} disabled={historyLoadingMore}>{historyLoadingMore ? "Cargando…" : "Cargar 100 capturas más"}</button> : <span>Se mostraron todas las capturas guardadas del producto</span>}</div>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para consultar su histórico.</div>}
+                <div className={historyMode ? "history-metrics-grid" : "mini-grid"}><div><span>Precio máximo histórico</span><b>{maxPrice == null ? "—" : money.format(maxPrice)}</b></div><div><span>Precio mínimo histórico</span><b>{minPrice == null ? "—" : money.format(minPrice)}</b></div><div><span>Capturas totales</span><b>{integer.format(historyTotal)} registros</b></div>{historyMode && <div><span>Cambios reales</span><b>{integer.format(historyChangeCount)}</b></div>}<div><span>Última captura</span><b>{formatDate(selected.scrapedAt)}</b></div></div></div>
+                <div className="history-table"><div className="section-head"><h2>{historyMode ? "Todas las capturas del producto" : "Últimas capturas"}</h2><small>{historyMode ? `Mostrando ${integer.format(history.length)} de ${integer.format(historyTotal)} · incluye capturas sin variación` : "Fecha y hora exactas · VET"}</small></div><div className="table-scroll"><table><thead><tr><th>Fecha</th>{historyMode && <th>Precio anterior</th>}<th>Precio actual</th><th>Diferencia USD</th><th>Variación</th>{historyMode && <><th>Disponibilidad</th><th>Unidades reportadas</th></>}</tr></thead><tbody>{(historyMode ? history : history.slice(0, 10)).map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td>{historyMode && <td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td>}<td>{point.price == null ? "Sin precio" : money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td>{historyMode && <><td>{point.inStock == null ? "No reportada" : point.inStock ? "Disponible" : "No disponible"}</td><td>{point.availableQuantity == null ? "No reportadas" : integer.format(point.availableQuantity)}</td></>}</tr>)}</tbody></table></div>{historyMode && <div className="changes-load-more">{historyHasMore ? <button onClick={() => void loadMoreHistory()} disabled={historyLoadingMore}>{historyLoadingMore ? "Cargando…" : "Cargar 100 capturas más"}</button> : <span>Se mostraron todas las capturas guardadas del producto</span>}</div>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para consultar su histórico.</div>}
             </article>
           </section>
           </> : priceTab === "changes" ? <>

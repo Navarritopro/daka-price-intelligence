@@ -23,7 +23,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       )
       SELECT *, COUNT(*) OVER()::int AS total_count,
         MIN(price_usd) OVER() AS historical_min_price,
-        MAX(price_usd) OVER() AS historical_max_price
+        MAX(price_usd) OVER() AS historical_max_price,
+        COUNT(*) FILTER (
+          WHERE previous_price IS NOT NULL
+            AND price_usd IS DISTINCT FROM previous_price
+        ) OVER()::int AS historical_change_count
       FROM ordered
       ORDER BY scraped_at DESC
       LIMIT ${limit} OFFSET ${offset}
@@ -46,7 +50,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     return NextResponse.json({
       items, total, offset, limit, hasMore: offset + items.length < total,
       minPrice: rows.length && rows[0].historical_min_price != null ? asNumber(rows[0].historical_min_price) : null,
-      maxPrice: rows.length && rows[0].historical_max_price != null ? asNumber(rows[0].historical_max_price) : null
+      maxPrice: rows.length && rows[0].historical_max_price != null ? asNumber(rows[0].historical_max_price) : null,
+      changeCount: rows.length ? asNumber(rows[0].historical_change_count) : 0
     });
   } catch (error) {
     console.error(error);
