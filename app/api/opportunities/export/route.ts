@@ -10,9 +10,18 @@ export async function GET(request: NextRequest) {
   if (format !== "xlsx" && format !== "pdf") {
     return NextResponse.json({ error: "Formato de exportación no válido" }, { status: 400 });
   }
+  const query = parseOpportunityQuery(request.nextUrl.searchParams);
+  let page;
   try {
-    const query = parseOpportunityQuery(request.nextUrl.searchParams);
-    const page = await getOpportunityPage(query, true);
+    page = await getOpportunityPage(query, true);
+  } catch (error) {
+    console.error("Opportunity export data query failed", error);
+    return NextResponse.json({
+      error: "No fue posible consultar las oportunidades para la exportación",
+      code: "OPPORTUNITY_DATA_QUERY_FAILED"
+    }, { status: 500 });
+  }
+  try {
     const buffer = format === "xlsx"
       ? await buildOpportunityExcel(page, query)
       : await buildOpportunityPdf(page, query);
@@ -26,7 +35,10 @@ export async function GET(request: NextRequest) {
       }
     });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "No fue posible generar la exportación" }, { status: 500 });
+    console.error(`Opportunity ${format} generation failed`, error);
+    return NextResponse.json({
+      error: "No fue posible generar la exportación",
+      code: format === "pdf" ? "OPPORTUNITY_PDF_GENERATION_FAILED" : "OPPORTUNITY_XLSX_GENERATION_FAILED"
+    }, { status: 500 });
   }
 }

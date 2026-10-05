@@ -57,6 +57,21 @@ test("PDF pagina una tabla extensa sin agregar páginas vacías", async () => {
   assert.equal(pageObjects.length, 5);
 });
 
+test("PDF tolera caracteres no compatibles y fechas defectuosas", async () => {
+  const resilientItem = {
+    ...item,
+    daka: { ...item.daka, name: `${item.daka.name} 🚀` },
+    comparisons: item.comparisons.map((comparison) => ({
+      ...comparison,
+      competitor: { ...comparison.competitor, name: `${comparison.competitor.name} 日本語` }
+    })),
+    detectedAt: "fecha-invalida"
+  };
+  const buffer = await buildOpportunityPdf({ ...page, items: [resilientItem], generatedAt: "fecha-invalida" }, query);
+  assert.equal(buffer.subarray(0, 4).toString(), "%PDF");
+  assert.ok(buffer.length > 2_000);
+});
+
 test("Resumen de Telegram es breve y conserva filtros", () => {
   const caption = buildOpportunityTelegramCaption(page, query);
   assert.match(caption, /Top 5 brechas/);

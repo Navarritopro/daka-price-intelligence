@@ -1,5 +1,12 @@
 import ExcelJS from "exceljs";
-import PDFDocument from "pdfkit";
+import {
+  PDFDocument as PdfDocument,
+  StandardFonts,
+  rgb,
+  type PDFFont,
+  type PDFPage,
+  type RGB
+} from "pdf-lib";
 import type { Opportunity, OpportunityPage, OpportunityQuery } from "@/lib/opportunities-service";
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -23,7 +30,9 @@ const vetDate = new Intl.DateTimeFormat("es-VE", {
 });
 
 function formatDate(value: string) {
-  return `${vetDate.format(new Date(value))} VET`;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "Fecha no disponible";
+  return `${vetDate.format(date)} VET`;
 }
 
 function numberOrDash(value: number | null) {
@@ -75,7 +84,8 @@ function styleHeader(row: ExcelJS.Row) {
 export async function buildOpportunityExcel(page: OpportunityPage, query: OpportunityQuery) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "DAKA Price Intelligence";
-  workbook.created = new Date(page.generatedAt);
+  const generatedAt = new Date(page.generatedAt);
+  workbook.created = Number.isFinite(generatedAt.getTime()) ? generatedAt : new Date();
 
   const summary = workbook.addWorksheet("Resumen", { views: [{ state: "frozen", ySplit: 1 }] });
   summary.columns = [{ width: 34 }, { width: 62 }];
@@ -168,16 +178,42 @@ function truncate(value: string, length: number) {
   return value.length <= length ? value : `${value.slice(0, length - 1)}…`;
 }
 
-export async function buildOpportunityPdf(page: OpportunityPage, query: OpportunityQuery) {
-  const document = new PDFDocument({ size: "A4", layout: "landscape", margin: 34, bufferPages: true, info: { Title: "Centro de oportunidades comerciales DAKA" } });
-  const chunks: Buffer[] = [];
-  document.on("data", (chunk: Buffer) => chunks.push(chunk));
-  const completed = new Promise<Buffer>((resolve, reject) => {
-    document.on("end", () => resolve(Buffer.concat(chunks)));
-    document.on("error", reject);
-  });
+function pdfColor(hex: string): RGB {
+  const normalized = hex.replace("#", "");
+  return rgb(
+    Number.parseInt(normalized.slice(0, 2), 16) / 255,
+    Number.parseInt(normalized.slice(2, 4), 16) / 255,
+    Number.parseInt(normalized.slice(4, 6), 16) / 255
+  );
+}
 
-  const pageWidth = 773;
+function safePdfText(value: unknown, font: PDFFont) {
+  const text = String(value ?? "");
+  return Array.from(text, (character) => {
+    try {
+      font.encodeText(character);
+      return character;
+    } catch {
+      const ascii = character.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "");
+      return ascii || "?";
+    }
+  }).join("");
+}
+
+function drawPdfText(page: PDFPage, value: unknown, font: PDFFont, options: Parameters<PDFPage["drawText"]>[1]) {
+  page.drawText(safePdfText(value, font), { ...options, font });
+}
+
+export async function buildOpportunityPdf(page: OpportunityPage, query: OpportunityQuery) {
+  const document = await PdfDocument.create();
+  document.setTitle("Centro de oportunidades comerciales DAKA");
+  document.setAuthor("DAKA Price Intelligence");
+  document.setCreator("DAKA Price Intelligence");
+  const regular = await document.embedFont(StandardFonts.Helvetica);
+  const bold = await document.embedFont(StandardFonts.HelveticaBold);
+  const width = 841.89;
+  const height = 595.28;
+  const contentWidth = 773;
   const columns: PdfColumn[] = [
     { label: "Prioridad", width: 55, value: (item) => PRIORITY_LABELS[item.primary.priority] ?? item.primary.priority },
     { label: "Producto DAKA", width: 158, value: (item) => `${truncate(item.daka.name, 46)}\nSAP ${item.daka.externalId}` },
@@ -189,17 +225,18 @@ export async function buildOpportunityPdf(page: OpportunityPage, query: Opportun
     { label: "Disponibilidad", width: 100, value: (item) => { const competitor = primaryComparison(item)?.competitor; return `D: ${stockLabel(item.daka.inStock, item.daka.availableQuantity)}\nC: ${competitor ? stockLabel(competitor.inStock, competitor.availableQuantity) : "No reportada"}`; } }
   ];
 
-  const header = () => {
-    document.rect(0, 0, 841.89, 54).fill("#003288");
-    document.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(16).text("DAKA · Centro de oportunidades comerciales", 34, 18);
-    document.font("Helvetica").fontSize(8).text("Uso interno DAKA", 680, 22, { width: 125, align: "right" });
-    document.fillColor("#10223D");
+  const header = (pdfPage: PDFPage) => {
+    pdfPage.drawRectangle({ x: 0, y: height - 54, width, height: 54, color: pdfColor("003288") });
+    drawPdfText(pdfPage, "DAKA · Centro de oportunidades comerciales", bold, { x: 34, y: height - 35, size: 16, color: pdfColor("FFFFFF") });
+    const internal = safePdfText("Uso interno DAKA", regular);
+    drawPdfText(pdfPage, internal, regular, { x: width - 34 - regular.widthOfTextAtSize(internal, 8), y: height - 33, size: 8, color: pdfColor("FFFFFF") });
   };
 
-  header();
-  document.font("Helvetica-Bold").fontSize(18).fillColor("#003288").text("Resumen ejecutivo", 34, 76);
-  document.font("Helvetica").fontSize(8).fillColor("#526780").text(`Generado: ${formatDate(page.generatedAt)}`, 34, 102);
-  document.text(describeOpportunityFilters(query), 34, 116, { width: pageWidth });
+  const summaryPage = document.addPage([width, height]);
+  header(summaryPage);
+  drawPdfText(summaryPage, "Resumen ejecutivo", bold, { x: 34, y: height - 94, size: 18, color: pdfColor("003288") });
+  drawPdfText(summaryPage, `Generado: ${formatDate(page.generatedAt)}`, regular, { x: 34, y: height - 113, size: 8, color: pdfColor("526780") });
+  drawPdfText(summaryPage, truncate(describeOpportunityFilters(query), 170), regular, { x: 34, y: height - 127, size: 8, color: pdfColor("526780") });
   const metrics = [
     ["Oportunidades", page.stats.total], ["Críticas o altas", page.stats.prioritized],
     ["Riesgos de precio", page.stats.priceRisks], ["Ventajas de precio", page.stats.priceAdvantages],
@@ -207,64 +244,69 @@ export async function buildOpportunityPdf(page: OpportunityPage, query: Opportun
   ] as const;
   metrics.forEach(([label, value], index) => {
     const x = 34 + index * 128;
-    document.roundedRect(x, 145, 117, 54, 6).fillAndStroke(index % 2 ? "#F3F7FF" : "#FFF9DD", "#D7E0EC");
-    document.fillColor("#526780").font("Helvetica").fontSize(7).text(label, x + 8, 156, { width: 101 });
-    document.fillColor("#10223D").font("Helvetica-Bold").fontSize(17).text(String(value), x + 8, 172, { width: 101 });
+    summaryPage.drawRectangle({ x, y: height - 199, width: 117, height: 54, color: pdfColor(index % 2 ? "F3F7FF" : "FFF9DD"), borderColor: pdfColor("D7E0EC"), borderWidth: 1 });
+    drawPdfText(summaryPage, label, regular, { x: x + 8, y: height - 166, size: 7, color: pdfColor("526780") });
+    drawPdfText(summaryPage, value, bold, { x: x + 8, y: height - 187, size: 17, color: pdfColor("10223D") });
   });
-  document.fillColor("#003288").font("Helvetica-Bold").fontSize(12).text("Top 5 brechas absolutas", 34, 226);
+  drawPdfText(summaryPage, "Top 5 brechas absolutas", bold, { x: 34, y: height - 238, size: 12, color: pdfColor("003288") });
   const topFive = [...page.items].sort((a, b) => Math.abs(b.primary.differencePct ?? 0) - Math.abs(a.primary.differencePct ?? 0)).slice(0, 5);
-  let topY = 251;
+  let topY = height - 263;
   topFive.forEach((item, index) => {
     const comparison = primaryComparison(item);
-    document.fillColor("#10223D").font("Helvetica-Bold").fontSize(8).text(`${index + 1}. ${truncate(item.daka.name, 70)}`, 42, topY, { width: 430 });
-    document.fillColor(`#${SOURCE_COLORS[item.primary.sourceName] ?? "003288"}`).text(item.primary.sourceName, 488, topY, { width: 90 });
-    document.fillColor(item.primary.favorable ? "#087855" : "#B2263A").text(`${item.primary.differencePct == null ? "—" : `${item.primary.differencePct.toFixed(1)}%`} · ${comparison?.competitor.price == null ? "—" : money.format(comparison.competitor.price)}`, 590, topY, { width: 170, align: "right" });
-    document.moveTo(42, topY + 16).lineTo(799, topY + 16).strokeColor("#E3EAF3").stroke();
-    topY += 34;
+    drawPdfText(summaryPage, `${index + 1}. ${truncate(item.daka.name, 70)}`, bold, { x: 42, y: topY, size: 8, color: pdfColor("10223D") });
+    drawPdfText(summaryPage, item.primary.sourceName, bold, { x: 488, y: topY, size: 8, color: pdfColor(SOURCE_COLORS[item.primary.sourceName] ?? "003288") });
+    const gap = `${item.primary.differencePct == null ? "—" : `${item.primary.differencePct.toFixed(1)}%`} · ${comparison?.competitor.price == null ? "—" : money.format(comparison.competitor.price)}`;
+    const safeGap = safePdfText(gap, bold);
+    drawPdfText(summaryPage, safeGap, bold, { x: Math.max(590, 760 - bold.widthOfTextAtSize(safeGap, 8)), y: topY, size: 8, color: pdfColor(item.primary.favorable ? "087855" : "B2263A") });
+    summaryPage.drawLine({ start: { x: 42, y: topY - 8 }, end: { x: 799, y: topY - 8 }, thickness: 1, color: pdfColor("E3EAF3") });
+    topY -= 34;
   });
-  document.fillColor("#526780").font("Helvetica").fontSize(8).text("Metodología: última ejecución exitosa de DAKA contra la última ejecución exitosa de cada competidor. Las señales apoyan la revisión comercial y no asumen margen ni recomiendan descuentos automáticamente.", 34, 443, { width: pageWidth, lineGap: 2 });
+  drawPdfText(summaryPage, "Metodología: última ejecución exitosa de DAKA contra la última ejecución exitosa de cada competidor.", regular, { x: 34, y: 132, size: 8, color: pdfColor("526780") });
+  drawPdfText(summaryPage, "Las señales apoyan la revisión comercial y no asumen margen ni recomiendan descuentos automáticamente.", regular, { x: 34, y: 120, size: 8, color: pdfColor("526780") });
 
-  const drawTableHeader = (y: number) => {
+  const drawTableHeader = (pdfPage: PDFPage, y: number) => {
     let x = 34;
-    document.rect(34, y, pageWidth, 24).fill("#FFCD00");
-    document.fillColor("#10223D").font("Helvetica-Bold").fontSize(7);
+    pdfPage.drawRectangle({ x: 34, y: y - 24, width: contentWidth, height: 24, color: pdfColor("FFCD00") });
     for (const column of columns) {
-      document.text(column.label, x + 4, y + 8, { width: column.width - 8 });
+      drawPdfText(pdfPage, column.label, bold, { x: x + 4, y: y - 16, size: 7, color: pdfColor("10223D") });
       x += column.width;
     }
-    return y + 24;
+    return y - 24;
   };
 
   let y = 0;
+  let tablePage: PDFPage;
   const newTablePage = () => {
-    document.addPage();
-    header();
-    document.fillColor("#003288").font("Helvetica-Bold").fontSize(12).text("Detalle de oportunidades", 34, 69);
-    y = drawTableHeader(92);
+    tablePage = document.addPage([width, height]);
+    header(tablePage);
+    drawPdfText(tablePage, "Detalle de oportunidades", bold, { x: 34, y: height - 79, size: 12, color: pdfColor("003288") });
+    y = drawTableHeader(tablePage, height - 92);
   };
   newTablePage();
   page.items.forEach((item, index) => {
     const rowHeight = 38;
-    if (y + rowHeight > 548) newTablePage();
-    if (index % 2 === 1) document.rect(34, y, pageWidth, rowHeight).fill("#F7F9FC");
+    if (y - rowHeight < 47) newTablePage();
+    if (index % 2 === 1) tablePage.drawRectangle({ x: 34, y: y - rowHeight, width: contentWidth, height: rowHeight, color: pdfColor("F7F9FC") });
     let x = 34;
     columns.forEach((column, columnIndex) => {
-      const color = columnIndex === 2 ? `#${SOURCE_COLORS[item.primary.sourceName] ?? "003288"}` : columnIndex === 6 ? (item.primary.favorable ? "#087855" : "#B2263A") : "#10223D";
-      document.fillColor(color).font(columnIndex === 0 || columnIndex === 2 || columnIndex === 6 ? "Helvetica-Bold" : "Helvetica").fontSize(6.5)
-        .text(column.value(item), x + 4, y + 7, { width: column.width - 8, height: rowHeight - 10, ellipsis: true });
+      const color = columnIndex === 2 ? SOURCE_COLORS[item.primary.sourceName] ?? "003288" : columnIndex === 6 ? (item.primary.favorable ? "087855" : "B2263A") : "10223D";
+      const cellFont = columnIndex === 0 || columnIndex === 2 || columnIndex === 6 ? bold : regular;
+      const lines = column.value(item).split("\n").slice(0, 2);
+      lines.forEach((line, lineIndex) => {
+        drawPdfText(tablePage, truncate(line, Math.max(8, Math.floor(column.width / 3.7))), cellFont, { x: x + 4, y: y - 12 - lineIndex * 10, size: 6.5, color: pdfColor(color) });
+      });
       x += column.width;
     });
-    document.moveTo(34, y + rowHeight).lineTo(807, y + rowHeight).strokeColor("#E3EAF3").stroke();
-    y += rowHeight;
+    tablePage.drawLine({ start: { x: 34, y: y - rowHeight }, end: { x: 807, y: y - rowHeight }, thickness: 1, color: pdfColor("E3EAF3") });
+    y -= rowHeight;
   });
 
-  const range = document.bufferedPageRange();
-  for (let index = range.start; index < range.start + range.count; index += 1) {
-    document.switchToPage(index);
-    document.fillColor("#718096").font("Helvetica").fontSize(7).text(`Página ${index + 1} de ${range.count}`, 34, 548, { width: pageWidth, align: "right", lineBreak: false });
-  }
-  document.end();
-  return completed;
+  const pages = document.getPages();
+  pages.forEach((pdfPage, index) => {
+    const footer = safePdfText(`Página ${index + 1} de ${pages.length}`, regular);
+    drawPdfText(pdfPage, footer, regular, { x: width - 34 - regular.widthOfTextAtSize(footer, 7), y: 27, size: 7, color: pdfColor("718096") });
+  });
+  return Buffer.from(await document.save({ useObjectStreams: false }));
 }
 
 export function buildOpportunityTelegramCaption(page: OpportunityPage, query: OpportunityQuery) {
