@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected_tables=(sources scraping_jobs products price_history product_matches alerts scrape_requests)
+          expected_tables=(sources scraping_jobs products price_history product_matches product_match_audit alerts scrape_requests)
 
           {
             echo "## Base temporal preparada"

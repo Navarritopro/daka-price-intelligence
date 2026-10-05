@@ -1,0 +1,41 @@
+name: Preparar gestión de homologaciones
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Escribe PREPARAR para crear la auditoría de homologaciones"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    if: ${{ inputs.confirm == 'PREPARAR' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.TEMP_DATABASE_URL || secrets.DATABASE_URL }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Validar conexión
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}" || { echo "Falta TEMP_DATABASE_URL o DATABASE_URL"; exit 1; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT current_database(), current_user;"
+      - name: Crear auditoría de homologaciones
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/match_management.sql
+      - name: Confirmar estructura
+        shell: bash
+        run: |
+          set -euo pipefail
+          exists="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT to_regclass('public.product_match_audit') IS NOT NULL")"
+          test "$exists" = "t" || { echo "No se creó product_match_audit"; exit 1; }
+          echo "## Gestión de homologaciones preparada" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Verificación | Resultado |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tabla product_match_audit | OK |" >> "$GITHUB_STEP_SUMMARY"
