@@ -200,3 +200,18 @@ Despliegue controlado:
 
 Los horarios son 9:46 a. m., 11:46 a. m. y 1:46 p. m. VET. Los respaldos se
 omiten automáticamente cuando ya existe una captura exitosa del día.
+
+## Centro de oportunidades comerciales
+
+El módulo consolida una sola oportunidad por producto DAKA a partir de la última
+captura exitosa de DAKA y la última captura exitosa de cada competidor homologado.
+Permite ordenar el universo filtrado por prioridad, competencia, brecha USD o
+brecha porcentual, y no solamente las primeras filas visibles.
+
+- **Excel:** descarga un `.xlsx` con las hojas Resumen, Oportunidades y Detalle competitivo.
+- **PDF:** genera un documento horizontal paginado con KPIs, filtros, top 5 y detalle completo.
+- **Telegram:** los administradores pueden enviar manualmente ese mismo PDF al grupo configurado.
+
+Las tres salidas respetan los filtros seleccionados en la web. El envío utiliza
+`TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`, ya requeridos por las alertas existentes;
+no sustituye ni modifica el reporte automático de precios.

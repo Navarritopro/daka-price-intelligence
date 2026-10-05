@@ -215,6 +215,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get("priceTab") === "opportunities") {
+      setHistoryMode(false);
+      setPriceTab("opportunities");
+    }
     const source = params.get("source") ?? "";
     const currentJob = params.get("currentJob") ?? "";
     const previousJob = params.get("previousJob") ?? "";
@@ -649,7 +653,7 @@ export default function Dashboard() {
                   <div className="history-table"><div className="section-head"><div><h2>Historial de cambios de precio</h2><small className="section-explanation">Solo se muestran las capturas donde el precio cambió.</small></div><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{point.price == null ? "Sin precio" : money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los cambios reales del período" : "No existen cambios con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
               </article>
             </section>
-          </> : priceTab === "damasco" ? <DamascoCatalog reportComparison={reportComparison}/> : priceTab === "competitors" ? <CompetitorComparison/> : <CommercialOpportunities/>}
+          </> : priceTab === "damasco" ? <DamascoCatalog reportComparison={reportComparison}/> : priceTab === "competitors" ? <CompetitorComparison/> : <CommercialOpportunities canAdmin={currentRole === "admin"}/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax, IVOO y Venelectronics</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage">Fase 5 · Venelectronics</span></div></section>
         </main>
       ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} canAdmin={currentRole === "admin"} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}

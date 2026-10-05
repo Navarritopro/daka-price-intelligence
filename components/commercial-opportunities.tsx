@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics";
 type OpportunityType = "price_risk" | "price_advantage" | "availability_risk" | "availability_advantage" | "stale_data";
 type Priority = "critical" | "high" | "medium" | "informative";
+type OpportunitySort = "priority" | "competitor_asc" | "competitor_desc" | "gap_usd_desc" | "gap_usd_asc" | "gap_pct_desc" | "gap_pct_asc";
 
 type Signal = {
   type: OpportunityType;
@@ -113,7 +114,7 @@ function priorityLabel(value: Priority) {
   return { critical: "Crítica", high: "Alta", medium: "Media", informative: "Informativa" }[value];
 }
 
-export default function CommercialOpportunities() {
+export default function CommercialOpportunities({ canAdmin = false }: { canAdmin?: boolean }) {
   const [items, setItems] = useState<Opportunity[]>([]);
   const [selected, setSelected] = useState<Opportunity | null>(null);
   const [stats, setStats] = useState<OpportunityStats>(EMPTY_STATS);
@@ -128,6 +129,7 @@ export default function CommercialOpportunities() {
   const [priority, setPriority] = useState("all");
   const [availability, setAvailability] = useState("all");
   const [minimumGap, setMinimumGap] = useState("5");
+  const [sort, setSort] = useState<OpportunitySort>("priority");
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [freshnessHours, setFreshnessHours] = useState(48);
@@ -135,6 +137,8 @@ export default function CommercialOpportunities() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reportNotice, setReportNotice] = useState<string | null>(null);
+  const [telegramSending, setTelegramSending] = useState(false);
   const queryVersion = useRef(0);
 
   useEffect(() => {
@@ -144,8 +148,37 @@ export default function CommercialOpportunities() {
 
   const parameters = useCallback((offset: number) => new URLSearchParams({
     limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
-    source, brand, category, type, priority, availability, minimumGap
-  }), [availability, brand, category, debouncedSearch, minimumGap, priority, source, type]);
+    source, brand, category, type, priority, availability, minimumGap, sort
+  }), [availability, brand, category, debouncedSearch, minimumGap, priority, sort, source, type]);
+
+  const reportParameters = useCallback(() => {
+    const values = parameters(0);
+    values.delete("limit");
+    values.delete("offset");
+    return values;
+  }, [parameters]);
+
+  const sendTelegramPdf = useCallback(async () => {
+    setTelegramSending(true);
+    setReportNotice(null);
+    try {
+      const response = await fetch("/api/opportunities/telegram", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ searchParams: reportParameters().toString() })
+      });
+      const payload = await response.json() as { sent?: boolean; total?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "No fue posible enviar el reporte");
+      setReportNotice(`PDF enviado por Telegram con ${integer.format(payload.total ?? 0)} oportunidades.`);
+    } catch (requestError) {
+      setReportNotice(requestError instanceof Error ? requestError.message : "No fue posible enviar el reporte");
+    } finally {
+      setTelegramSending(false);
+    }
+  }, [reportParameters]);
+
+  const toggleCompetitorSort = () => setSort((current) => current === "competitor_asc" ? "competitor_desc" : "competitor_asc");
+  const toggleGapSort = () => setSort((current) => current === "gap_usd_desc" ? "gap_usd_asc" : "gap_usd_desc");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -231,14 +264,25 @@ export default function CommercialOpportunities() {
       <select aria-label="Prioridad" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="all">Todas las prioridades</option><option value="critical">Crítica</option><option value="high">Alta</option><option value="medium">Media</option><option value="informative">Informativa</option></select>
       <select aria-label="Disponibilidad" value={availability} onChange={(event) => setAvailability(event.target.value)}><option value="all">Cualquier disponibilidad</option><option value="daka_available">DAKA disponible</option><option value="daka_unavailable">DAKA sin disponibilidad</option><option value="competitor_available">Competidor disponible</option><option value="competitor_unavailable">Competidor sin disponibilidad</option></select>
       <select aria-label="Brecha mínima" value={minimumGap} onChange={(event) => setMinimumGap(event.target.value)}><option value="5">Brecha mínima 5%</option><option value="10">Brecha mínima 10%</option><option value="15">Brecha mínima 15%</option><option value="20">Brecha mínima 20%</option></select>
+      <select aria-label="Orden de oportunidades" value={sort} onChange={(event) => setSort(event.target.value as OpportunitySort)}><option value="priority">Prioridad comercial</option><option value="competitor_asc">Competencia A–Z</option><option value="competitor_desc">Competencia Z–A</option><option value="gap_usd_desc">Mayor brecha USD</option><option value="gap_usd_asc">Menor brecha USD</option><option value="gap_pct_desc">Mayor brecha %</option><option value="gap_pct_asc">Menor brecha %</option></select>
     </div>
+
+    <div className="opportunity-actions" aria-label="Acciones del reporte">
+      <div><strong>Reporte con los filtros seleccionados</strong><small>Incluye todas las oportunidades encontradas, aunque todavía no estén cargadas en la tabla.</small></div>
+      <div>
+        <a className="opportunity-export-button" href={`/api/opportunities/export?format=xlsx&${reportParameters().toString()}`}>Descargar Excel</a>
+        <a className="opportunity-export-button" href={`/api/opportunities/export?format=pdf&${reportParameters().toString()}`}>Descargar PDF</a>
+        {canAdmin && <button className="opportunity-telegram-button" onClick={() => void sendTelegramPdf()} disabled={telegramSending}>{telegramSending ? "Enviando…" : "Enviar PDF por Telegram"}</button>}
+      </div>
+    </div>
+    {reportNotice && <div className="opportunity-report-notice" role="status">{reportNotice}</div>}
 
     {error && <div className="error-banner"><strong>Análisis pendiente</strong><span>{error}</span></div>}
     {stats.stale > 0 && <div className="opportunity-freshness-warning"><strong>{integer.format(stats.stale)} productos con datos por actualizar</strong><span>No se presentan como oportunidades confirmadas hasta que las fuentes completen una nueva ejecución exitosa.</span></div>}
 
     <article className="opportunity-table-card">
       <div className="section-head"><div><h2>Oportunidades detectadas</h2><small className="section-explanation">Un producto DAKA aparece una sola vez; el detalle reúne todos sus competidores homologados.</small></div><small>{loading ? "Analizando…" : `Mostrando ${integer.format(items.length)} de ${integer.format(total)}`}</small></div>
-      {loading ? <div className="empty-state">Calculando señales comerciales con las últimas capturas exitosas…</div> : items.length === 0 ? <div className="empty-state">No se encontraron oportunidades con los filtros seleccionados.</div> : <div className="table-scroll"><table className="opportunity-table"><thead><tr><th>Prioridad</th><th>Producto DAKA</th><th>Competencia principal</th><th>Situación</th><th>Precio DAKA</th><th>Precio competencia</th><th>Brecha</th><th>Disponibilidad</th><th>Detectado</th><th>Detalle</th></tr></thead><tbody>{items.map((item) => {
+      {loading ? <div className="empty-state">Calculando señales comerciales con las últimas capturas exitosas…</div> : items.length === 0 ? <div className="empty-state">No se encontraron oportunidades con los filtros seleccionados.</div> : <div className="table-scroll"><table className="opportunity-table"><thead><tr><th>Prioridad</th><th>Producto DAKA</th><th><button className="opportunity-sort-button" onClick={toggleCompetitorSort}>Competencia principal <span aria-hidden="true">{sort === "competitor_asc" ? "↑" : sort === "competitor_desc" ? "↓" : "↕"}</span></button></th><th>Situación</th><th>Precio DAKA</th><th>Precio competencia</th><th><button className="opportunity-sort-button" onClick={toggleGapSort}>Brecha <span aria-hidden="true">{sort === "gap_usd_asc" ? "↑" : sort === "gap_usd_desc" ? "↓" : "↕"}</span></button></th><th>Disponibilidad</th><th>Detectado</th><th>Detalle</th></tr></thead><tbody>{items.map((item) => {
         const primaryComparison = item.comparisons.find((entry) => entry.source === item.primary.source && entry.signal?.type === item.primary.type)
           ?? item.comparisons.find((entry) => entry.source === item.primary.source)
           ?? item.comparisons[0];
