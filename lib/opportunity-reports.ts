@@ -248,21 +248,42 @@ export async function buildOpportunityPdf(page: OpportunityPage, query: Opportun
     drawPdfText(summaryPage, label, regular, { x: x + 8, y: height - 166, size: 7, color: pdfColor("526780") });
     drawPdfText(summaryPage, value, bold, { x: x + 8, y: height - 187, size: 17, color: pdfColor("10223D") });
   });
-  drawPdfText(summaryPage, "Top 5 brechas absolutas", bold, { x: 34, y: height - 238, size: 12, color: pdfColor("003288") });
-  const topFive = [...page.items].sort((a, b) => Math.abs(b.primary.differencePct ?? 0) - Math.abs(a.primary.differencePct ?? 0)).slice(0, 5);
-  let topY = height - 263;
+  drawPdfText(summaryPage, "Top 5 mayores brechas de precio entre DAKA y la competencia", bold, { x: 34, y: height - 238, size: 12, color: pdfColor("003288") });
+  const topFive = page.items
+    .filter((item) => item.primary.differencePct != null && primaryComparison(item)?.competitor.price != null)
+    .sort((a, b) => Math.abs(b.primary.differencePct ?? 0) - Math.abs(a.primary.differencePct ?? 0))
+    .slice(0, 5);
+  let topY = height - 260;
   topFive.forEach((item, index) => {
     const comparison = primaryComparison(item);
-    drawPdfText(summaryPage, `${index + 1}. ${truncate(item.daka.name, 70)}`, bold, { x: 42, y: topY, size: 8, color: pdfColor("10223D") });
-    drawPdfText(summaryPage, item.primary.sourceName, bold, { x: 488, y: topY, size: 8, color: pdfColor(SOURCE_COLORS[item.primary.sourceName] ?? "003288") });
-    const gap = `${item.primary.differencePct == null ? "—" : `${item.primary.differencePct.toFixed(1)}%`} · ${comparison?.competitor.price == null ? "—" : money.format(comparison.competitor.price)}`;
-    const safeGap = safePdfText(gap, bold);
-    drawPdfText(summaryPage, safeGap, bold, { x: Math.max(590, 760 - bold.widthOfTextAtSize(safeGap, 8)), y: topY, size: 8, color: pdfColor(item.primary.favorable ? "087855" : "B2263A") });
-    summaryPage.drawLine({ start: { x: 42, y: topY - 8 }, end: { x: 799, y: topY - 8 }, thickness: 1, color: pdfColor("E3EAF3") });
-    topY -= 34;
+    if (!comparison) return;
+    const favorable = item.primary.favorable;
+    const signalColor = favorable ? "087855" : "B2263A";
+    const signalBackground = favorable ? "EEF9F4" : "FFF2F3";
+    const status = favorable ? "VENTAJA" : "RIESGO";
+    const interpretation = item.primary.differenceUsd == null
+      ? `${status}: brecha porcentual ${item.primary.differencePct?.toFixed(1) ?? "—"}%`
+      : `${status}: DAKA está ${money.format(Math.abs(item.primary.differenceUsd))} ${favorable ? "más económico" : "más caro"} (${item.primary.differencePct?.toFixed(1) ?? "—"}%)`;
+
+    summaryPage.drawRectangle({ x: 34, y: topY - 32, width: contentWidth, height: 39, color: pdfColor(signalBackground), borderColor: pdfColor("D7E0EC"), borderWidth: 0.7 });
+    summaryPage.drawRectangle({ x: 34, y: topY - 32, width: 4, height: 39, color: pdfColor(signalColor) });
+
+    drawPdfText(summaryPage, `${index + 1}. Producto DAKA: ${truncate(item.daka.name, 52)}`, bold, { x: 44, y: topY - 6, size: 7.5, color: pdfColor("10223D") });
+    drawPdfText(summaryPage, `Producto ${item.primary.sourceName}: ${truncate(comparison.competitor.name, 48)}`, bold, { x: 414, y: topY - 6, size: 7.5, color: pdfColor(SOURCE_COLORS[item.primary.sourceName] ?? "003288") });
+
+    const dakaPrice = item.daka.price == null ? "No reportado" : money.format(item.daka.price);
+    const competitorPrice = comparison.competitor.price == null ? "No reportado" : money.format(comparison.competitor.price);
+    drawPdfText(summaryPage, `SAP ${truncate(item.daka.externalId, 20)}`, regular, { x: 50, y: topY - 22, size: 6.7, color: pdfColor("526780") });
+    drawPdfText(summaryPage, `DAKA: ${dakaPrice}`, bold, { x: 190, y: topY - 22, size: 6.7, color: pdfColor("003288") });
+    drawPdfText(summaryPage, `${item.primary.sourceName}: ${competitorPrice}`, bold, { x: 414, y: topY - 22, size: 6.7, color: pdfColor(SOURCE_COLORS[item.primary.sourceName] ?? "003288") });
+    drawPdfText(summaryPage, interpretation, bold, { x: 535, y: topY - 22, size: 6.7, color: pdfColor(signalColor) });
+    topY -= 43;
   });
-  drawPdfText(summaryPage, "Metodología: última ejecución exitosa de DAKA contra la última ejecución exitosa de cada competidor.", regular, { x: 34, y: 132, size: 8, color: pdfColor("526780") });
-  drawPdfText(summaryPage, "Las señales apoyan la revisión comercial y no asumen margen ni recomiendan descuentos automáticamente.", regular, { x: 34, y: 120, size: 8, color: pdfColor("526780") });
+  if (!topFive.length) {
+    drawPdfText(summaryPage, "No existen brechas de precio comparables con los filtros seleccionados.", regular, { x: 42, y: topY - 8, size: 8, color: pdfColor("526780") });
+  }
+  drawPdfText(summaryPage, "Metodología: última ejecución exitosa de DAKA contra la última ejecución exitosa de cada competidor.", regular, { x: 34, y: 80, size: 7.5, color: pdfColor("526780") });
+  drawPdfText(summaryPage, "Las señales apoyan la revisión comercial y no asumen margen ni recomiendan descuentos automáticamente.", regular, { x: 34, y: 68, size: 7.5, color: pdfColor("526780") });
 
   const drawTableHeader = (pdfPage: PDFPage, y: number) => {
     let x = 34;
