@@ -215,3 +215,15 @@ brecha porcentual, y no solamente las primeras filas visibles.
 Las tres salidas respetan los filtros seleccionados en la web. El envío utiliza
 `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`, ya requeridos por las alertas existentes;
 no sustituye ni modifica el reporte automático de precios.
+
+## Gestión de homologaciones
+
+Los administradores disponen de **Administrar homologaciones** dentro del comparador
+de cada competidor. Desde allí pueden corregir una relación, desactivarla sin borrar
+su histórico o restaurar una relación desactivada. Toda operación exige un motivo,
+registra usuario, fecha y estado anterior, y aplica control de concurrencia para no
+sobrescribir un cambio realizado por otra persona.
+
+Después de publicar esta actualización, ejecutar una sola vez el workflow manual
+**Preparar gestión de homologaciones** e introducir `PREPARAR`. El workflow utiliza
+`TEMP_DATABASE_URL` si está configurado y, en caso contrario, `DATABASE_URL`.

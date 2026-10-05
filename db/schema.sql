@@ -86,6 +86,23 @@ CREATE TABLE IF NOT EXISTS product_matches (
   UNIQUE (daka_product_id, competitor_product_id)
 );
 
+CREATE TABLE IF NOT EXISTS product_match_audit (
+  id BIGSERIAL PRIMARY KEY,
+  match_id BIGINT REFERENCES product_matches(id) ON DELETE SET NULL,
+  daka_product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  competitor_product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  action TEXT NOT NULL CHECK (action IN ('deactivated', 'replaced', 'restored')),
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  replacement_match_id BIGINT REFERENCES product_matches(id) ON DELETE SET NULL,
+  reason TEXT NOT NULL,
+  notes TEXT,
+  actor_user_id UUID,
+  actor_email TEXT NOT NULL,
+  snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
   id BIGSERIAL PRIMARY KEY,
   source_id BIGINT NOT NULL REFERENCES sources(id),
@@ -110,5 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_products_source_model ON products (source_id, mod
 CREATE INDEX IF NOT EXISTS idx_alerts_source_created ON alerts (source_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_matches_daka_status ON product_matches (daka_product_id, status);
 CREATE INDEX IF NOT EXISTS idx_matches_competitor_status ON product_matches (competitor_product_id, status);
+CREATE INDEX IF NOT EXISTS idx_match_audit_match_created ON product_match_audit (match_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_match_audit_actor_created ON product_match_audit (actor_email, created_at DESC);
 
 COMMIT;

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import MatchReview from "@/components/match-review";
+import MatchManagement from "@/components/match-management";
 import CompetitorHistory from "@/components/competitor-history";
 
 type StoreProduct = {
@@ -86,10 +87,10 @@ function matchMethodLabel(method: string) {
   return labels[method] ?? "equivalencia confirmada";
 }
 
-export default function CompetitorComparison() {
+export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: boolean }) {
   const [source, setSource] = useState<CompetitorSource>("damasco");
   const competitor = COMPETITORS[source];
-  const [mode, setMode] = useState<"comparison" | "review">("comparison");
+  const [mode, setMode] = useState<"comparison" | "review" | "manage">("comparison");
   const [analysisView, setAnalysisView] = useState<"current" | "history">("current");
   const [refreshToken, setRefreshToken] = useState(0);
   const [items, setItems] = useState<Comparison[]>([]);
@@ -185,6 +186,15 @@ export default function CompetitorComparison() {
     />;
   }
 
+  if (mode === "manage") {
+    return <MatchManagement
+      source={source}
+      competitorName={competitor.name}
+      onBack={() => { setRefreshToken((current) => current + 1); setMode("comparison"); }}
+      onChanged={() => setRefreshToken((current) => current + 1)}
+    />;
+  }
+
   return <>
     <nav className="competitor-source-tabs" aria-label="Competidor seleccionado">
       {(Object.entries(COMPETITORS) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={source === slug ? "active" : ""} onClick={() => { setSource(slug); setCategory(""); setBrand(""); setMode("comparison"); }}>{item.name}</button>)}
@@ -198,6 +208,7 @@ export default function CompetitorComparison() {
         <button className="secondary-button" type="button" onClick={() => setMode("review")}>
           Revisar {integer.format(stats.reviewPending)} productos
         </button>
+        {canAdmin && <button className="secondary-button" type="button" onClick={() => setMode("manage")}>Administrar homologaciones</button>}
       </div>
     </section>
 
