@@ -127,6 +127,12 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   const loadingMoreRef = useRef(false);
   const activeReportComparison = reportComparison?.source === source ? reportComparison : null;
 
+  const resetProductScroll = useCallback(() => {
+    const reset = () => listRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    reset();
+    window.requestAnimationFrame(reset);
+  }, []);
+
   useEffect(() => {
     if (!reportComparison || !Object.prototype.hasOwnProperty.call(SOURCES, reportComparison.source)) return;
     setSource(reportComparison.source as CompetitorSource);
@@ -156,7 +162,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     const controller = new AbortController();
     const version = ++productVersion.current;
     setProductLoading(true); setProductError(null); setProducts([]); setProductTotal(0);
-    setProductHasMore(false); setSelected(null); listRef.current?.scrollTo({ top: 0 });
+    setProductHasMore(false); setSelected(null); resetProductScroll();
     fetch(`/api/products?${productParams(0)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const page = await response.json();
@@ -174,7 +180,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       })
       .finally(() => { if (version === productVersion.current) setProductLoading(false); });
     return () => controller.abort();
-  }, [productParams, sourceName, tab]);
+  }, [productParams, resetProductScroll, sourceName, tab]);
 
   const loadMoreProducts = useCallback(async () => {
     if (loadingMoreRef.current || productLoading || !productHasMore) return;
@@ -299,12 +305,14 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   }
 
   function openCatalog() {
+    resetProductScroll();
     setHistoryMode(false);
     setTab("explore");
     setStatus("current");
   }
 
   function openProductHistory(product?: ProductSummary) {
+    resetProductScroll();
     setHistoryMode(true);
     setTab("explore");
     setStatus("all");
@@ -320,7 +328,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   const latestCapture = captures[0] ?? null;
 
   return <section className="damasco-catalog">
-    <nav className="competitor-source-tabs" aria-label="Catálogo competidor">{tab === "availability" && <><button className={availabilitySource === "all" ? "active" : ""} onClick={() => setAvailabilitySource("all")}>Todos</button><button className={availabilitySource === "daka" ? "active" : ""} onClick={() => setAvailabilitySource("daka")}>DAKA</button></>}{(Object.entries(SOURCES) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={(tab === "availability" ? availabilitySource : source) === slug ? "active" : ""} onClick={() => { if (tab === "availability") setAvailabilitySource(slug); else { setSource(slug); setCategory(""); setBrand(""); } }}>{item.name}</button>)}</nav>
+    <nav className="competitor-source-tabs" aria-label="Catálogo competidor">{tab === "availability" && <><button className={availabilitySource === "all" ? "active" : ""} onClick={() => setAvailabilitySource("all")}>Todos</button><button className={availabilitySource === "daka" ? "active" : ""} onClick={() => setAvailabilitySource("daka")}>DAKA</button></>}{(Object.entries(SOURCES) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={(tab === "availability" ? availabilitySource : source) === slug ? "active" : ""} onClick={() => { if (tab === "availability") setAvailabilitySource(slug); else { resetProductScroll(); setSource(slug); setCategory(""); setBrand(""); } }}>{item.name}</button>)}</nav>
     {tab !== "availability" && <><div className="damasco-catalog-head"><div><span className="eyebrow-dark">Inteligencia competitiva · Catálogo completo</span><h2>Productos e histórico de {sourceName}</h2><p>Consulta todo el catálogo scrapeado aunque el producto todavía no esté homologado con DAKA.</p></div><div><span>Última captura</span><strong>{formatDate(summary?.lastScrapeAt)}</strong></div></div>
     {summaryError && <div className="error-banner"><strong>Resumen pendiente</strong><span>{summaryError}</span></div>}
     <div className="damasco-summary">

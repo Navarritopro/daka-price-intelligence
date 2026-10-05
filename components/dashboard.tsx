@@ -180,6 +180,12 @@ export default function Dashboard() {
   const loadingMoreRef = useRef(false);
   const changeQueryVersion = useRef(0);
 
+  const resetProductScroll = useCallback(() => {
+    const reset = () => productListRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    reset();
+    window.requestAnimationFrame(reset);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -240,7 +246,7 @@ export default function Dashboard() {
     setTotalProducts(0);
     setHasMoreProducts(false);
     setSelected(null);
-    productListRef.current?.scrollTo({ top: 0 });
+    resetProductScroll();
 
     fetch(`/api/products?${params.toString()}`, { cache: "no-store", signal: controller.signal })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Products unavailable")))
@@ -262,7 +268,7 @@ export default function Dashboard() {
       });
 
     return () => controller.abort();
-  }, [brandFilter, debouncedSearch, changeFilter, priceTab, productStatus]);
+  }, [brandFilter, debouncedSearch, changeFilter, priceTab, productStatus, resetProductScroll]);
 
   const loadMoreProductResults = useCallback(async () => {
     if (loadingMoreRef.current || productsLoading || !hasMoreProducts) return;
@@ -510,12 +516,14 @@ export default function Dashboard() {
   }
 
   function openExplorePrices() {
+    resetProductScroll();
     setHistoryMode(false);
     setPriceTab("explore");
     setProductStatus("current");
   }
 
   function openProductHistory(product?: ProductSummary) {
+    resetProductScroll();
     setHistoryMode(true);
     setPriceTab("explore");
     setProductStatus("all");
