@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "daka";
     const source = ["daka", "damasco", "multimax", "ivoo", "venelectronics"].includes(requestedSource) ? requestedSource : "daka";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
+    const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const requestedPeriod = request.nextUrl.searchParams.get("days") ?? "30";
     const period = ["1", "7", "30", "90", "all"].includes(requestedPeriod) ? requestedPeriod : "30";
     const days = period === "all" ? 30 : Number(period);
@@ -27,6 +28,14 @@ export async function GET(request: NextRequest) {
     if (Boolean(currentJob) !== Boolean(previousJob)) {
       return NextResponse.json({ error: "La comparación requiere ambas ejecuciones" }, { status: 400 });
     }
+
+    const brandRows = await sql`
+      SELECT MIN(TRIM(p.brand)) AS brand
+      FROM products p JOIN sources s ON s.id = p.source_id
+      WHERE s.slug = ${source} AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
+      GROUP BY LOWER(TRIM(p.brand))
+      ORDER BY brand
+    `;
 
     if (currentJob && previousJob) {
       const exactRows = await sql`
@@ -81,6 +90,7 @@ export async function GET(request: NextRequest) {
             AND (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
               OR COALESCE(p.brand, '') ILIKE ${searchLike}
               OR COALESCE(p.model, '') ILIKE ${searchLike})
+            AND (${brand} = '' OR LOWER(TRIM(COALESCE(p.brand, ''))) = LOWER(TRIM(${brand})))
         )
         SELECT
           p.id, p.external_id, p.name, p.category, p.url, p.last_seen_at,
@@ -123,6 +133,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         items, total, offset, limit, hasMore: offset + items.length < total,
         comparison: { source, currentJob, previousJob },
+        brands: brandRows.map((row) => row.brand),
         stats: {
           productsChanged: total,
           totalChanges: exactRows.length ? asNumber(exactRows[0].total_changes) : 0,
@@ -190,6 +201,7 @@ export async function GET(request: NextRequest) {
           AND (${search} = '' OR eligible_product.name ILIKE ${searchLike} OR eligible_product.external_id ILIKE ${searchLike}
             OR COALESCE(eligible_product.brand, '') ILIKE ${searchLike}
             OR COALESCE(eligible_product.model, '') ILIKE ${searchLike})
+          AND (${brand} = '' OR LOWER(TRIM(COALESCE(eligible_product.brand, ''))) = LOWER(TRIM(${brand})))
           AND (
             ${status} = 'all'
             OR NOT EXISTS (SELECT 1 FROM latest_successful_job)
@@ -268,6 +280,7 @@ export async function GET(request: NextRequest) {
       offset,
       limit,
       hasMore: offset + items.length < total,
+      brands: brandRows.map((row) => row.brand),
       stats: {
         productsChanged: total,
         totalChanges: rows.length ? asNumber(rows[0].total_changes) : 0,

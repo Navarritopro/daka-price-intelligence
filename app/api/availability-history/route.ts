@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const searchLike = `%${search}%`;
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
+    const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
 
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) {
         WHERE (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
           OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
           AND (${category} = '' OR p.category = ${category})
+          AND (${brand} = '' OR LOWER(TRIM(COALESCE(p.brand, ''))) = LOWER(TRIM(${brand})))
       )
       SELECT source_slug, source_name, capture_date,
         COUNT(*)::int AS captured_products,
@@ -98,6 +100,7 @@ export async function GET(request: NextRequest) {
         WHERE (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
           OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
           AND (${category} = '' OR p.category = ${category})
+          AND (${brand} = '' OR LOWER(TRIM(COALESCE(p.brand, ''))) = LOWER(TRIM(${brand})))
       ), ordered AS (
         SELECT *, LAG(is_available) OVER (PARTITION BY source_id, product_id ORDER BY capture_date) AS previous_available
         FROM captures
@@ -126,7 +129,7 @@ export async function GET(request: NextRequest) {
         ORDER BY source_id, capture_date, completed_at DESC, id DESC
       ), captures AS (
         SELECT ss.slug AS source_slug, ss.name AS source_name, dj.capture_date,
-          p.id, p.external_id, p.name, p.category, p.url, ph.available_quantity,
+          p.id, p.external_id, p.name, p.brand, p.category, p.url, ph.available_quantity,
           CASE
             WHEN ph.in_stock IS TRUE OR COALESCE(ph.available_quantity, 0) > 0 THEN TRUE
             WHEN ph.in_stock IS FALSE OR ph.available_quantity = 0 THEN FALSE
@@ -139,8 +142,9 @@ export async function GET(request: NextRequest) {
         WHERE (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
           OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
           AND (${category} = '' OR p.category = ${category})
+          AND (${brand} = '' OR LOWER(TRIM(COALESCE(p.brand, ''))) = LOWER(TRIM(${brand})))
       ), summarized AS (
-        SELECT id, MIN(external_id) AS external_id, MIN(name) AS name, MIN(category) AS category,
+        SELECT id, MIN(external_id) AS external_id, MIN(name) AS name, MIN(brand) AS brand, MIN(category) AS category,
           MIN(url) AS url, MIN(source_slug) AS source_slug, MIN(source_name) AS source_name,
           COUNT(*)::int AS capture_days,
           (ARRAY_AGG(available_quantity ORDER BY capture_date))[1] AS first_quantity,
@@ -186,6 +190,15 @@ export async function GET(request: NextRequest) {
         AND p.category IS NOT NULL AND p.category <> ''
       ORDER BY p.category
     `;
+    const brandRows = await sql`
+      SELECT MIN(TRIM(p.brand)) AS brand
+      FROM products p JOIN sources s ON s.id = p.source_id
+      WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
+        AND (${source} = 'all' OR s.slug = ${source})
+        AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
+      GROUP BY LOWER(TRIM(p.brand))
+      ORDER BY brand
+    `;
 
     const series = seriesRows.map((row) => ({
       source: row.source_slug,
@@ -217,7 +230,7 @@ export async function GET(request: NextRequest) {
 
     const stats = statsRows[0];
     const items = productRows.map((row) => ({
-      id: asNumber(row.id), externalId: row.external_id, name: row.name, category: row.category ?? null,
+      id: asNumber(row.id), externalId: row.external_id, name: row.name, brand: row.brand ?? null, category: row.category ?? null,
       url: row.url, source: row.source_slug, sourceName: row.source_name,
       captureDays: asNumber(row.capture_days), firstQuantity: row.first_quantity == null ? null : asNumber(row.first_quantity),
       latestQuantity: row.latest_quantity == null ? null : asNumber(row.latest_quantity),
@@ -238,7 +251,8 @@ export async function GET(request: NextRequest) {
         leftStock: stats ? asNumber(stats.left_stock) : 0,
         unquantifiedEnd
       },
-      categories: categoryRows.map((row) => row.category)
+      categories: categoryRows.map((row) => row.category),
+      brands: brandRows.map((row) => row.brand)
     });
   } catch (error) {
     console.error("Availability history failed", error);

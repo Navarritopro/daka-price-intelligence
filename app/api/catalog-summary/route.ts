@@ -50,6 +50,13 @@ export async function GET(request: NextRequest) {
       WHERE s.slug = ${source} AND p.category IS NOT NULL AND p.category <> ''
       ORDER BY p.category
     `;
+    const brandRows = await sql`
+      SELECT MIN(TRIM(p.brand)) AS brand
+      FROM products p JOIN sources s ON s.id = p.source_id
+      WHERE s.slug = ${source} AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
+      GROUP BY LOWER(TRIM(p.brand))
+      ORDER BY brand
+    `;
     return NextResponse.json({
       source: summary?.source_name ?? source,
       productsCurrent: asNumber(summary?.products_current),
@@ -62,7 +69,8 @@ export async function GET(request: NextRequest) {
       lastScrapeAt: summary?.last_scrape_at ?? null,
       lastJobStatus: summary?.last_job_status ?? null,
       lastJobDurationSeconds: summary?.duration_seconds == null ? null : asNumber(summary.duration_seconds),
-      categories: categoryRows.map((row) => row.category)
+      categories: categoryRows.map((row) => row.category),
+      brands: brandRows.map((row) => row.brand)
     });
   } catch (error) {
     console.error(error);

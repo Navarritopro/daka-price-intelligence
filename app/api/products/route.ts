@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const source = ["daka", "damasco", "multimax", "ivoo", "venelectronics"].includes(requestedSource) ? requestedSource : "daka";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
+    const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const change = request.nextUrl.searchParams.get("change")?.trim() ?? "all";
     const requestedStatus = request.nextUrl.searchParams.get("status")?.trim() ?? "current";
     const status = ["current", "missing", "all"].includes(requestedStatus) ? requestedStatus : "current";
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
         AND (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
           OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
         AND (${category} = '' OR p.category = ${category})
+        AND (${brand} = '' OR LOWER(TRIM(COALESCE(p.brand, ''))) = LOWER(TRIM(${brand})))
         AND (
           ${status} = 'all'
           OR NOT EXISTS (SELECT 1 FROM latest_successful_job)
@@ -92,6 +94,14 @@ export async function GET(request: NextRequest) {
       OFFSET ${offset}
     `;
 
+    const brandRows = await sql`
+      SELECT MIN(TRIM(p.brand)) AS brand
+      FROM products p JOIN sources s ON s.id = p.source_id
+      WHERE s.slug = ${source} AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
+      GROUP BY LOWER(TRIM(p.brand))
+      ORDER BY brand
+    `;
+
     const items = rows.map((row) => ({
       id: asNumber(row.id),
       externalId: row.external_id,
@@ -117,7 +127,8 @@ export async function GET(request: NextRequest) {
       total,
       offset,
       limit,
-      hasMore: offset + items.length < total
+      hasMore: offset + items.length < total,
+      brands: brandRows.map((row) => row.brand)
     });
   } catch (error) {
     console.error(error);

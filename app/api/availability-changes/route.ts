@@ -16,6 +16,7 @@ export async function GET(request: NextRequest) {
     const movement = MOVEMENTS.includes(requestedMovement as (typeof MOVEMENTS)[number]) ? requestedMovement : "all";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
+    const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
     const searchLike = `%${search}%`;
@@ -91,6 +92,7 @@ export async function GET(request: NextRequest) {
         WHERE (${search} = '' OR c.name ILIKE ${searchLike} OR c.external_id ILIKE ${searchLike}
           OR COALESCE(c.brand, '') ILIKE ${searchLike} OR COALESCE(c.model, '') ILIKE ${searchLike})
           AND (${category} = '' OR c.category = ${category})
+          AND (${brand} = '' OR LOWER(TRIM(COALESCE(c.brand, ''))) = LOWER(TRIM(${brand})))
       ), movement_filtered AS (
         SELECT *
         FROM base_filtered bf
@@ -157,6 +159,15 @@ export async function GET(request: NextRequest) {
         AND p.category IS NOT NULL AND p.category <> ''
       ORDER BY p.category
     `;
+    const brandRows = await sql`
+      SELECT MIN(TRIM(p.brand)) AS brand
+      FROM products p JOIN sources s ON s.id = p.source_id
+      WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
+        AND (${source} = 'all' OR s.slug = ${source})
+        AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
+      GROUP BY LOWER(TRIM(p.brand))
+      ORDER BY brand
+    `;
 
     const items = rows.filter((row) => row.id != null).map((row) => ({
       id: asNumber(row.id),
@@ -200,7 +211,8 @@ export async function GET(request: NextRequest) {
         currentFinishedAt: row.current_finished_at ?? null,
         previousFinishedAt: row.previous_finished_at ?? null
       })),
-      categories: categoryRows.map((row) => row.category)
+      categories: categoryRows.map((row) => row.category),
+      brands: brandRows.map((row) => row.brand)
     });
   } catch (error) {
     console.error(error);

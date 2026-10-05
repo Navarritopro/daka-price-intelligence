@@ -6,7 +6,7 @@ type ReviewProduct = { id: number; externalId: string; name: string; url: string
 type Evidence = { engineVersion?: string; brand?: string; productType?: string; sharedModels?: string[]; sharedAttributes?: string[]; tokenSimilarity?: number; nameSimilarity?: number; warnings?: string[]; conflicts?: string[]; variantNotes?: string[]; candidateRank?: number; candidateCount?: number; candidateTotal?: number };
 type ReviewCandidate = { matchId: number; confidence: number; matchMethod: string; evidence: Evidence; bulkEligible: boolean; competitor: ReviewProduct };
 type ReviewGroup = { daka: ReviewProduct; candidates: ReviewCandidate[] };
-type ReviewPage = { groups: ReviewGroup[]; totalProducts: number; totalAlternatives: number; safeCandidates: number; hasMore: boolean };
+type ReviewPage = { groups: ReviewGroup[]; totalProducts: number; totalAlternatives: number; safeCandidates: number; hasMore: boolean; brands: string[] };
 
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
@@ -46,6 +46,8 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
   const [hasMore, setHasMore] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [brand, setBrand] = useState("");
+  const [brands, setBrands] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -58,7 +60,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
 
   const load = useCallback(async (offset = 0) => {
     setLoading(offset === 0);
-    const params = new URLSearchParams({ source, search: debouncedSearch, limit: "15", offset: String(offset) });
+    const params = new URLSearchParams({ source, search: debouncedSearch, brand, limit: "15", offset: String(offset) });
     try {
       const response = await fetch(`/api/matches?${params.toString()}`, { cache: "no-store" });
       const page = await response.json() as ReviewPage & { error?: string };
@@ -68,6 +70,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
       setTotalAlternatives(page.totalAlternatives);
       setSafeCandidates(page.safeCandidates);
       setHasMore(page.hasMore);
+      setBrands(page.brands ?? []);
       if (offset === 0) setSelected(new Set());
       setMessage(null);
     } catch (error) {
@@ -75,7 +78,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, source]);
+  }, [brand, debouncedSearch, source]);
 
   useEffect(() => { void load(0); }, [load]);
 
@@ -150,7 +153,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
       <div><strong>{integer.format(totalAlternatives)}</strong><span>alternativas analizadas</span></div>
       <div><strong>{integer.format(safeCandidates)}</strong><span>primeras opciones de alta confianza</span></div>
     </div>
-    <div className="review-toolbar"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP o referencia"/><div className="review-bulk-actions"><button type="button" onClick={selectVisibleSafe} disabled={processing || loading}>Seleccionar sugerencias visibles</button><button className="confirm-button" type="button" onClick={() => void confirmSelected()} disabled={processing || selected.size === 0}>{processing ? "Procesando…" : `Confirmar seleccionadas (${selected.size})`}</button></div></div>
+    <div className="review-toolbar"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP o referencia"/><select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><div className="review-bulk-actions"><button type="button" onClick={selectVisibleSafe} disabled={processing || loading}>Seleccionar sugerencias visibles</button><button className="confirm-button" type="button" onClick={() => void confirmSelected()} disabled={processing || selected.size === 0}>{processing ? "Procesando…" : `Confirmar seleccionadas (${selected.size})`}</button></div></div>
     <div className="review-safety-note">La selección rápida solo se habilita para la primera opción con ≥85% de confianza, marca y tipo confirmados, modelo compartido o al menos dos especificaciones coincidentes y sin conflictos.</div>
     {message && <div className="review-message" role="status">{message}</div>}
     {loading ? <div className="empty-state">Cargando productos pendientes…</div> : groups.length === 0 ? <div className="empty-state">No existen productos pendientes con esta búsqueda.</div> : <div className="review-group-list">{groups.map((group) => <article className="review-group" key={group.daka.id}>

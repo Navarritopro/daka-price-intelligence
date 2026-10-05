@@ -14,7 +14,7 @@ type HistoryItem = {
 };
 type Stats = { total: number; dakaLower: number; competitorLower: number; gained: number; lost: number; switched: number; averageGapPct: number };
 type PeriodInfo = { mode: "preset" | "custom"; days: number; startDate: string; endDate: string; totalDays: number };
-type Page = { items: HistoryItem[]; total: number; hasMore: boolean; categories: string[]; stats: Stats; period: PeriodInfo; error?: string };
+type Page = { items: HistoryItem[]; total: number; hasMore: boolean; categories: string[]; brands: string[]; stats: Stats; period: PeriodInfo; error?: string };
 type Point = { date: string; dakaPrice: number; competitorPrice: number; gapUsd: number; gapPct: number; dakaInStock: boolean | null; competitorInStock: boolean | null };
 type Detail = { dakaName: string; dakaSap: string; competitorName: string; competitorReference: string; points: Point[]; error?: string };
 
@@ -114,6 +114,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [category, setCategory] = useState("");
+  const [brand, setBrand] = useState("");
   const [position, setPosition] = useState("all");
   const [movement, setMovement] = useState("all");
   const [availability, setAvailability] = useState("both");
@@ -121,6 +122,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
   const [sort, setSort] = useState("opportunity");
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
   const [period, setPeriod] = useState<PeriodInfo>(() => ({ mode: "preset", days: 30, startDate: defaultCustomRange().startDate, endDate: defaultCustomRange().endDate, totalDays: 30 }));
   const [selected, setSelected] = useState<HistoryItem | null>(null);
@@ -135,14 +137,15 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
   const queryVersion = useRef(0);
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400); return () => window.clearTimeout(timer); }, [search]);
+  useEffect(() => { setCategory(""); setBrand(""); }, [source]);
   const parameters = useCallback((offset: number) => {
-    const result = new URLSearchParams({ source, days, search: debouncedSearch, category, position, movement, availability, minGap, sort, limit: String(BATCH_SIZE), offset: String(offset) });
+    const result = new URLSearchParams({ source, days, search: debouncedSearch, category, brand, position, movement, availability, minGap, sort, limit: String(BATCH_SIZE), offset: String(offset) });
     if (days === "custom") {
       result.set("startDate", appliedCustomRange.startDate);
       result.set("endDate", appliedCustomRange.endDate);
     }
     return result;
-  }, [appliedCustomRange, availability, category, days, debouncedSearch, minGap, movement, position, sort, source]);
+  }, [appliedCustomRange, availability, brand, category, days, debouncedSearch, minGap, movement, position, sort, source]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -150,7 +153,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
     setLoading(true); setError(null); setItems([]); setSelected(null); setDetail(null);
     fetch(`/api/comparison-history?${parameters(0)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => { const payload = await response.json() as Page; if (!response.ok) throw new Error(payload.error); return payload; })
-      .then((page) => { if (version !== queryVersion.current) return; setItems(page.items); setSelected(page.items[0] ?? null); setTotal(page.total); setHasMore(page.hasMore); setCategories(page.categories); setStats(page.stats); setPeriod(page.period); })
+      .then((page) => { if (version !== queryVersion.current) return; setItems(page.items); setSelected(page.items[0] ?? null); setTotal(page.total); setHasMore(page.hasMore); setCategories(page.categories); setBrands(page.brands ?? []); setStats(page.stats); setPeriod(page.period); })
       .catch((requestError) => { if (!(requestError instanceof DOMException && requestError.name === "AbortError") && version === queryVersion.current) setError(requestError instanceof Error ? requestError.message : "No fue posible cargar el histórico"); })
       .finally(() => { if (version === queryVersion.current) setLoading(false); });
     return () => controller.abort();
@@ -220,6 +223,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
     <section className="filters history-filters">
       <select value={days} onChange={(event) => { setDays(event.target.value); setDateError(null); }}><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="custom">Rango personalizado</option></select>
       <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Producto, SAP, marca o referencia"/>
+      <select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{categories.map((value) => <option key={value}>{value}</option>)}</select>
       <select value={position} onChange={(event) => setPosition(event.target.value)}><option value="all">Todas las posiciones</option><option value="daka_lower">DAKA más económico</option><option value="competitor_lower">Competidor más económico</option><option value="equal">Mismo precio</option></select>
       <select value={movement} onChange={(event) => setMovement(event.target.value)}><option value="all">Todos los movimientos</option><option value="gained">DAKA ganó competitividad</option><option value="lost">DAKA perdió competitividad</option><option value="switched">Cambió el liderazgo</option><option value="stable">Sin cambio relevante</option></select>

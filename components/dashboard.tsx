@@ -44,6 +44,7 @@ type ChangePage = {
   limit: number;
   hasMore: boolean;
   stats: ChangeStats;
+  brands: string[];
 };
 type MovementPage = {
   items: PricePoint[];
@@ -66,6 +67,7 @@ type ProductPage = {
   offset: number;
   limit: number;
   hasMore: boolean;
+  brands: string[];
 };
 
 const PRODUCT_BATCH_SIZE = 50;
@@ -142,6 +144,8 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [changeFilter, setChangeFilter] = useState("all");
+  const [brandFilter, setBrandFilter] = useState("");
+  const [brands, setBrands] = useState<string[]>([]);
   const [productStatus, setProductStatus] = useState("current");
   const [totalProducts, setTotalProducts] = useState(0);
   const [hasMoreProducts, setHasMoreProducts] = useState(false);
@@ -228,6 +232,7 @@ export default function Dashboard() {
       change: changeFilter,
       status: productStatus
     });
+    params.set("brand", brandFilter);
 
     setProductsLoading(true);
     setProductLoadError(null);
@@ -244,6 +249,7 @@ export default function Dashboard() {
         setProducts(page.items);
         setTotalProducts(page.total);
         setHasMoreProducts(page.hasMore);
+        setBrands(page.brands ?? []);
         setSelected(page.items[0] ?? null);
       })
       .catch((requestError) => {
@@ -256,7 +262,7 @@ export default function Dashboard() {
       });
 
     return () => controller.abort();
-  }, [debouncedSearch, changeFilter, priceTab, productStatus]);
+  }, [brandFilter, debouncedSearch, changeFilter, priceTab, productStatus]);
 
   const loadMoreProductResults = useCallback(async () => {
     if (loadingMoreRef.current || productsLoading || !hasMoreProducts) return;
@@ -270,6 +276,7 @@ export default function Dashboard() {
       change: changeFilter,
       status: productStatus
     });
+    params.set("brand", brandFilter);
 
     try {
       const response = await fetch(`/api/products?${params.toString()}`, { cache: "no-store" });
@@ -291,7 +298,7 @@ export default function Dashboard() {
       if (version === productQueryVersion.current) setLoadingMoreProducts(false);
       loadingMoreRef.current = false;
     }
-  }, [changeFilter, debouncedSearch, hasMoreProducts, productStatus, products.length, productsLoading]);
+  }, [brandFilter, changeFilter, debouncedSearch, hasMoreProducts, productStatus, products.length, productsLoading]);
 
   useEffect(() => {
     if (priceTab !== "changes") return;
@@ -306,6 +313,7 @@ export default function Dashboard() {
       threshold: changeThreshold,
       status: changeStatus
     });
+    params.set("brand", brandFilter);
     if (reportComparison?.source === "daka") {
       params.set("currentJob", reportComparison.currentJob);
       params.set("previousJob", reportComparison.previousJob);
@@ -324,6 +332,7 @@ export default function Dashboard() {
         setChangeTotal(page.total);
         setHasMoreChanges(page.hasMore);
         setChangeStats(page.stats);
+        setBrands(page.brands ?? []);
         setSelected(page.items[0] ?? null);
       })
       .catch((requestError) => {
@@ -336,7 +345,7 @@ export default function Dashboard() {
       });
 
     return () => controller.abort();
-  }, [changeDays, changeMovement, changeStatus, changeThreshold, debouncedSearch, priceTab, reportComparison]);
+  }, [brandFilter, changeDays, changeMovement, changeStatus, changeThreshold, debouncedSearch, priceTab, reportComparison]);
 
   const loadMoreChanges = useCallback(async () => {
     if (loadingMoreChanges || changesLoading || !hasMoreChanges) return;
@@ -351,6 +360,7 @@ export default function Dashboard() {
       threshold: changeThreshold,
       status: changeStatus
     });
+    params.set("brand", brandFilter);
     if (reportComparison?.source === "daka") {
       params.set("currentJob", reportComparison.currentJob);
       params.set("previousJob", reportComparison.previousJob);
@@ -369,7 +379,7 @@ export default function Dashboard() {
     } finally {
       if (version === changeQueryVersion.current) setLoadingMoreChanges(false);
     }
-  }, [changeDays, changeMovement, changeProducts.length, changeStatus, changeThreshold, changesLoading, debouncedSearch, hasMoreChanges, loadingMoreChanges, reportComparison]);
+  }, [brandFilter, changeDays, changeMovement, changeProducts.length, changeStatus, changeThreshold, changesLoading, debouncedSearch, hasMoreChanges, loadingMoreChanges, reportComparison]);
 
   useEffect(() => {
     const hasActiveExecution = latestRequest?.status === "queued" || latestRequest?.status === "running" || jobs.some((job) => job.status === "running");
@@ -597,7 +607,7 @@ export default function Dashboard() {
           <div className="tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("changes"); }}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("damasco"); }}>Catálogos competencia</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("competitors"); }}>Comparador</button></div>
           {priceTab === "explore" ? <>
           {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo por producto</strong><span>Selecciona un producto para consultar todas sus capturas, incluyendo los registros donde el precio no cambió.</span></div><button onClick={openExplorePrices}>Volver al catálogo actual</button></div>}
-          <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>
+          <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>
 
           <section className="content-grid">
             <article className="product-list"><div className="section-head"><h2>{historyMode ? "Productos con histórico" : productStatus === "current" ? "Catálogo actual" : productStatus === "missing" ? "No vistos en última captura" : "Catálogo histórico"}</h2><small>{productsLoading ? "Consultando catálogo…" : `Mostrando ${integer.format(products.length)} de ${integer.format(totalProducts)}`}</small></div><div className="product-scroll" ref={productListRef} onScroll={handleProductScroll}>
@@ -617,7 +627,7 @@ export default function Dashboard() {
           </section>
           </> : priceTab === "changes" ? <>
             {reportComparison?.source === "daka" && <div className="report-comparison-banner"><strong>Comparación del reporte de Telegram</strong><span>Se muestran exclusivamente las variaciones entre las dos capturas indicadas en la notificación.</span></div>}
-            <section className="filters change-filters"><input aria-label="Buscar producto con cambios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Período de cambios" value={reportComparison?.source === "daka" ? "report" : changeDays} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeDays(event.target.value)}>{reportComparison?.source === "daka" && <option value="report">Capturas del reporte</option>}<option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select aria-label="Tipo de movimiento" value={changeMovement} onChange={(event) => setChangeMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select aria-label="Magnitud mínima" value={changeThreshold} onChange={(event) => setChangeThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select aria-label="Estado del catálogo" value={changeStatus} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></section>
+            <section className="filters change-filters"><input aria-label="Buscar producto con cambios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Período de cambios" value={reportComparison?.source === "daka" ? "report" : changeDays} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeDays(event.target.value)}>{reportComparison?.source === "daka" && <option value="report">Capturas del reporte</option>}<option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select aria-label="Tipo de movimiento" value={changeMovement} onChange={(event) => setChangeMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select aria-label="Magnitud mínima" value={changeThreshold} onChange={(event) => setChangeThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select aria-label="Estado del catálogo" value={changeStatus} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></section>
             <section className="changes-summary"><article><span>Productos con cambios</span><strong>{changesLoading ? "…" : integer.format(changeStats.productsChanged)}</strong></article><article><span>Movimientos registrados</span><strong>{changesLoading ? "…" : integer.format(changeStats.totalChanges)}</strong></article><article className="drop"><span>Rebajas</span><strong>{changesLoading ? "…" : integer.format(changeStats.drops)}</strong></article><article className="rise"><span>Aumentos</span><strong>{changesLoading ? "…" : integer.format(changeStats.increases)}</strong></article></section>
             <section className="changes-grid">
               <article className="changes-table-card"><div className="section-head"><h2>Cambios encontrados</h2><small>{changesLoading ? "Consultando histórico…" : `Mostrando ${integer.format(changeProducts.length)} de ${integer.format(changeTotal)} productos`}</small></div>

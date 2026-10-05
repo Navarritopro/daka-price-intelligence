@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const source = ["damasco", "multimax", "ivoo", "venelectronics"].includes(requestedSource) ? requestedSource : "damasco";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
+    const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const requestedPosition = request.nextUrl.searchParams.get("position") ?? "all";
     const position = ["all", "daka_lower", "competitor_lower", "equal"].includes(requestedPosition)
       ? requestedPosition : "all";
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
         SELECT
           pm.id AS match_id, pm.confidence, pm.match_method,
           d.id AS daka_id, d.external_id AS daka_sap, d.name AS daka_name,
-          d.category AS daka_category, d.url AS daka_url,
+          d.brand AS daka_brand, d.category AS daka_category, d.url AS daka_url,
           dp.price_usd AS daka_price, dp.in_stock AS daka_in_stock,
           dp.scraped_at AS daka_scraped_at,
           c.id AS competitor_id, c.external_id AS competitor_reference,
@@ -68,6 +69,8 @@ export async function GET(request: NextRequest) {
         FROM comparisons
         WHERE (${search} = '' OR searchable ILIKE ${searchLike})
           AND (${category} = '' OR category = ${category})
+          AND (${brand} = '' OR LOWER(TRIM(COALESCE(daka_brand, ''))) = LOWER(TRIM(${brand}))
+            OR LOWER(TRIM(COALESCE(competitor_brand, ''))) = LOWER(TRIM(${brand})))
           AND (
             ${position} = 'all'
             OR (${position} = 'daka_lower' AND price_gap < 0)
@@ -133,6 +136,25 @@ export async function GET(request: NextRequest) {
       WHERE pm.status IN ('auto', 'confirmed') AND d.category IS NOT NULL
       ORDER BY d.category
     `;
+    const brandRows = await sql`
+      SELECT MIN(brand) AS brand
+      FROM (
+        SELECT TRIM(d.brand) AS brand
+        FROM product_matches pm
+        JOIN products d ON d.id = pm.daka_product_id
+        JOIN products c ON c.id = pm.competitor_product_id
+        JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
+        WHERE pm.status IN ('auto', 'confirmed') AND d.brand IS NOT NULL AND TRIM(d.brand) <> ''
+        UNION ALL
+        SELECT TRIM(c.brand) AS brand
+        FROM product_matches pm
+        JOIN products c ON c.id = pm.competitor_product_id
+        JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
+        WHERE pm.status IN ('auto', 'confirmed') AND c.brand IS NOT NULL AND TRIM(c.brand) <> ''
+      ) matched_brands
+      GROUP BY LOWER(brand)
+      ORDER BY brand
+    `;
 
     const items = rows.map((row) => ({
       matchId: asNumber(row.match_id),
@@ -140,7 +162,7 @@ export async function GET(request: NextRequest) {
       matchMethod: row.match_method,
       daka: {
         id: asNumber(row.daka_id), externalId: row.daka_sap, name: row.daka_name,
-        category: row.daka_category, url: row.daka_url,
+        brand: row.daka_brand, category: row.daka_category, url: row.daka_url,
         price: asNumber(row.daka_price), inStock: row.daka_in_stock,
         scrapedAt: row.daka_scraped_at
       },
@@ -162,6 +184,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       source, items, total, offset, limit, hasMore: offset + items.length < total,
       categories: categoryRows.map((row) => row.category),
+      brands: brandRows.map((row) => row.brand),
       stats: {
         competitorProducts: asNumber(stats?.competitor_products),
         reviewPending: asNumber(stats?.review_pending),

@@ -62,6 +62,7 @@ export async function GET(request: NextRequest) {
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "damasco";
     const source = ["damasco", "multimax", "ivoo", "venelectronics"].includes(requestedSource) ? requestedSource : "damasco";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
+    const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const searchLike = `%${search}%`;
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 15, 1), 25);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
@@ -94,7 +95,29 @@ export async function GET(request: NextRequest) {
       WHERE pm.status = 'review'
         AND (${search} = '' OR d.name ILIKE ${searchLike} OR d.external_id ILIKE ${searchLike}
           OR c.name ILIKE ${searchLike} OR c.external_id ILIKE ${searchLike})
+        AND (${brand} = '' OR LOWER(TRIM(COALESCE(d.brand, ''))) = LOWER(TRIM(${brand}))
+          OR LOWER(TRIM(COALESCE(c.brand, ''))) = LOWER(TRIM(${brand})))
       ORDER BY d.id, pm.confidence DESC, pm.id ASC
+    `;
+
+    const brandRows = await sql`
+      SELECT MIN(brand) AS brand
+      FROM (
+        SELECT TRIM(d.brand) AS brand
+        FROM product_matches pm
+        JOIN products d ON d.id = pm.daka_product_id
+        JOIN products c ON c.id = pm.competitor_product_id
+        JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
+        WHERE pm.status = 'review' AND d.brand IS NOT NULL AND TRIM(d.brand) <> ''
+        UNION ALL
+        SELECT TRIM(c.brand) AS brand
+        FROM product_matches pm
+        JOIN products c ON c.id = pm.competitor_product_id
+        JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
+        WHERE pm.status = 'review' AND c.brand IS NOT NULL AND TRIM(c.brand) <> ''
+      ) review_brands
+      GROUP BY LOWER(brand)
+      ORDER BY brand
     `;
 
     const grouped = new Map<number, any>();
@@ -138,6 +161,7 @@ export async function GET(request: NextRequest) {
       offset,
       limit,
       hasMore: offset + page.length < groups.length,
+      brands: brandRows.map((row) => row.brand),
     });
   } catch (error) {
     console.error(error);

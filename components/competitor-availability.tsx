@@ -46,6 +46,7 @@ type AvailabilityPage = {
   };
   comparisons: ComparisonWindow[];
   categories: string[];
+  brands: string[];
   error?: string;
 };
 
@@ -85,6 +86,7 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [movement, setMovement] = useState("all");
   const [category, setCategory] = useState("");
+  const [brand, setBrand] = useState("");
   const [items, setItems] = useState<AvailabilityItem[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -92,6 +94,7 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
   const [comparisons, setComparisons] = useState<ComparisonWindow[]>([]);
   const [stats, setStats] = useState({ productsCompared: 0, increased: 0, decreased: 0, unchanged: 0, statusChanges: 0, unquantified: 0 });
 
@@ -102,6 +105,7 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
 
   useEffect(() => {
     setCategory("");
+    setBrand("");
   }, [source]);
 
   const parameters = useCallback((offset: number) => new URLSearchParams({
@@ -109,9 +113,10 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
     search: debouncedSearch,
     movement,
     category,
+    brand,
     limit: String(BATCH_SIZE),
     offset: String(offset)
-  }), [category, debouncedSearch, movement, source]);
+  }), [brand, category, debouncedSearch, movement, source]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -133,6 +138,7 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
         setStats(page.stats);
         setComparisons(page.comparisons);
         setCategories(page.categories);
+        setBrands(page.brands ?? []);
       })
       .catch((requestError) => {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;
@@ -174,6 +180,7 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
     </div>
     <div className="availability-filters">
       <input aria-label="Buscar producto por disponibilidad" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, referencia, marca o modelo"/>
+      <select aria-label="Marca de disponibilidad" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select aria-label="Movimiento de disponibilidad" value={movement} onChange={(event) => setMovement(event.target.value)}><option value="all">Todos los movimientos</option><option value="up">Aumentó</option><option value="down">Disminuyó</option><option value="same">Sin variación</option><option value="restocked">Ingresó stock</option><option value="out">Se agotó</option><option value="unquantified">Sin cantidad exacta</option><option value="no_baseline">Sin base de comparación</option><option value="not_seen">No visto actualmente</option></select>
       <select aria-label="Categoría de disponibilidad" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
     </div>

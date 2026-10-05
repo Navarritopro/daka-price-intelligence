@@ -11,7 +11,7 @@ type SeriesPoint = {
   unknownProducts: number; unquantifiedProducts: number; reportedUnits: number;
 };
 type HistoryItem = {
-  id: number; externalId: string; name: string; category: string | null; url: string;
+  id: number; externalId: string; name: string; brand: string | null; category: string | null; url: string;
   source: Exclude<AvailabilitySource, "all">; sourceName: string; captureDays: number;
   firstQuantity: number | null; latestQuantity: number | null; minimumQuantity: number | null;
   maximumQuantity: number | null; firstAvailable: boolean | null; latestAvailable: boolean | null;
@@ -21,7 +21,7 @@ type HistoryPage = {
   series: SeriesPoint[]; items: HistoryItem[]; total: number; hasMore: boolean;
   stats: { availableStart: number; availableEnd: number; availableNet: number; unitsStart: number;
     unitsEnd: number; unitsNet: number; enteredStock: number; leftStock: number; unquantifiedEnd: number };
-  categories: string[]; error?: string;
+  categories: string[]; brands: string[]; error?: string;
 };
 type ProductPoint = { date: string; quantity: number | null; previousQuantity: number | null; difference: number | null; available: boolean | null };
 type ProductHistory = { product: { id: number; externalId: string; name: string; category: string | null; url: string; source: string; sourceName: string }; points: ProductPoint[]; error?: string };
@@ -96,6 +96,7 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [category, setCategory] = useState("");
+  const [brand, setBrand] = useState("");
   const [movement, setMovement] = useState("all");
   const [page, setPage] = useState<HistoryPage | null>(null);
   const [items, setItems] = useState<HistoryItem[]>([]);
@@ -113,7 +114,7 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
     return () => window.clearTimeout(timer);
   }, [search]);
-  useEffect(() => { setCategory(""); setSelected(null); }, [source]);
+  useEffect(() => { setCategory(""); setBrand(""); setSelected(null); }, [source]);
 
   const closeDetail = useCallback(() => {
     setSelected(null);
@@ -149,10 +150,10 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
   }, [closeDetail, selected]);
 
   const parameters = useCallback((offset: number) => {
-    const params = new URLSearchParams({ source, days, search: debouncedSearch, category, movement, limit: String(BATCH_SIZE), offset: String(offset) });
+    const params = new URLSearchParams({ source, days, search: debouncedSearch, category, brand, movement, limit: String(BATCH_SIZE), offset: String(offset) });
     if (days === "custom") { params.set("startDate", startDate); params.set("endDate", endDate); }
     return params;
-  }, [category, days, debouncedSearch, endDate, movement, source, startDate]);
+  }, [brand, category, days, debouncedSearch, endDate, movement, source, startDate]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -247,6 +248,7 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
 
     <div className="availability-filters history-detail-filters">
       <input aria-label="Buscar producto en el histórico" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, referencia, marca o modelo"/>
+      <select aria-label="Marca histórica" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{page?.brands.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select aria-label="Movimiento histórico" value={movement} onChange={(event) => setMovement(event.target.value)}><option value="all">Todos los movimientos</option><option value="up">Aumentó</option><option value="down">Disminuyó</option><option value="same">Sin variación</option><option value="restocked">Ingresó stock</option><option value="out">Se agotó</option><option value="unquantified">Sin cantidad exacta</option></select>
       <select aria-label="Categoría histórica" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{page?.categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
     </div>

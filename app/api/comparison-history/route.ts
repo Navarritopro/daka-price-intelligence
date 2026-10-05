@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const searchLike = `%${search}%`;
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
+    const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const position = request.nextUrl.searchParams.get("position") ?? "all";
     const movement = request.nextUrl.searchParams.get("movement") ?? "all";
     const availability = request.nextUrl.searchParams.get("availability") ?? "both";
@@ -58,9 +59,9 @@ export async function GET(request: NextRequest) {
       ), daily AS (
         SELECT pm.id AS match_id, pj.capture_date,
           d.id AS daka_product_id, d.external_id AS daka_sap, d.name AS daka_name,
-          d.category, d.url AS daka_url,
+          d.brand AS daka_brand, d.category, d.url AS daka_url,
           c.id AS competitor_product_id, c.external_id AS competitor_reference,
-          c.name AS competitor_name, c.url AS competitor_url,
+          c.name AS competitor_name, c.brand AS competitor_brand, c.url AS competitor_url,
           dp.price_usd AS daka_price, cp.price_usd AS competitor_price,
           dp.in_stock AS daka_in_stock, cp.in_stock AS competitor_in_stock,
           dp.price_usd - cp.price_usd AS gap_usd,
@@ -78,6 +79,8 @@ export async function GET(request: NextRequest) {
         WHERE dp.price_usd IS NOT NULL AND cp.price_usd IS NOT NULL
           AND (${search} = '' OR (d.name || ' ' || d.external_id || ' ' || c.name || ' ' || c.external_id) ILIKE ${searchLike})
           AND (${category} = '' OR d.category = ${category})
+          AND (${brand} = '' OR LOWER(TRIM(COALESCE(d.brand, ''))) = LOWER(TRIM(${brand}))
+            OR LOWER(TRIM(COALESCE(c.brand, ''))) = LOWER(TRIM(${brand})))
       ), positioned AS (
         SELECT *, LAG(price_position) OVER (PARTITION BY match_id ORDER BY capture_date) AS previous_position
         FROM daily
@@ -158,6 +161,25 @@ export async function GET(request: NextRequest) {
       WHERE pm.status IN ('auto', 'confirmed') AND d.category IS NOT NULL
       ORDER BY d.category
     `;
+    const brandRows = await sql`
+      SELECT MIN(brand) AS brand
+      FROM (
+        SELECT TRIM(d.brand) AS brand
+        FROM product_matches pm
+        JOIN products d ON d.id = pm.daka_product_id
+        JOIN products c ON c.id = pm.competitor_product_id
+        JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
+        WHERE pm.status IN ('auto', 'confirmed') AND d.brand IS NOT NULL AND TRIM(d.brand) <> ''
+        UNION ALL
+        SELECT TRIM(c.brand) AS brand
+        FROM product_matches pm
+        JOIN products c ON c.id = pm.competitor_product_id
+        JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
+        WHERE pm.status IN ('auto', 'confirmed') AND c.brand IS NOT NULL AND TRIM(c.brand) <> ''
+      ) matched_brands
+      GROUP BY LOWER(brand)
+      ORDER BY brand
+    `;
     const first = rows[0];
     const items = rows.map((row) => ({
       matchId: asNumber(row.match_id),
@@ -170,7 +192,7 @@ export async function GET(request: NextRequest) {
       averageAbsGapPct: asNumber(row.average_abs_gap_pct), bestDakaGapPct: asNumber(row.best_daka_gap_pct), worstDakaGapPct: asNumber(row.worst_daka_gap_pct), movement: row.movement
     }));
     const total = first ? asNumber(first.total_count) : 0;
-    return NextResponse.json({ source, days: period.days, period, items, total, offset, limit, hasMore: offset + items.length < total, categories: categoryRows.map((row) => row.category), stats: {
+    return NextResponse.json({ source, days: period.days, period, items, total, offset, limit, hasMore: offset + items.length < total, categories: categoryRows.map((row) => row.category), brands: brandRows.map((row) => row.brand), stats: {
       total, dakaLower: first ? asNumber(first.stat_daka_lower) : 0, competitorLower: first ? asNumber(first.stat_competitor_lower) : 0,
       gained: first ? asNumber(first.stat_gained) : 0, lost: first ? asNumber(first.stat_lost) : 0,
       switched: first ? asNumber(first.stat_switched) : 0, averageGapPct: first ? asNumber(first.stat_average_gap) : 0

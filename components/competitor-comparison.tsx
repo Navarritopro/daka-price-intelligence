@@ -42,6 +42,7 @@ type ComparisonPage = {
   total: number;
   hasMore: boolean;
   categories: string[];
+  brands: string[];
   stats: ComparisonStats;
 };
 
@@ -98,6 +99,8 @@ export default function CompetitorComparison() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [category, setCategory] = useState("");
+  const [brand, setBrand] = useState("");
+  const [brands, setBrands] = useState<string[]>([]);
   const [position, setPosition] = useState("all");
   const [sort, setSort] = useState("gap_desc");
   const [total, setTotal] = useState(0);
@@ -114,8 +117,8 @@ export default function CompetitorComparison() {
 
   const parameters = useCallback((offset: number) => new URLSearchParams({
     limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
-    category, position, sort, source
-  }), [category, debouncedSearch, position, sort, source]);
+    category, brand, position, sort, source
+  }), [brand, category, debouncedSearch, position, sort, source]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,6 +140,7 @@ export default function CompetitorComparison() {
         setTotal(page.total);
         setHasMore(page.hasMore);
         setCategories(page.categories);
+        setBrands(page.brands ?? []);
         setStats(page.stats);
       })
       .catch((requestError) => {
@@ -183,7 +187,7 @@ export default function CompetitorComparison() {
 
   return <>
     <nav className="competitor-source-tabs" aria-label="Competidor seleccionado">
-      {(Object.entries(COMPETITORS) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={source === slug ? "active" : ""} onClick={() => { setSource(slug); setMode("comparison"); }}>{item.name}</button>)}
+      {(Object.entries(COMPETITORS) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={source === slug ? "active" : ""} onClick={() => { setSource(slug); setCategory(""); setBrand(""); setMode("comparison"); }}>{item.name}</button>)}
     </nav>
     <nav className="comparison-view-tabs" aria-label="Tipo de análisis competitivo"><button className={analysisView === "current" ? "active" : ""} onClick={() => setAnalysisView("current")}>Posición actual</button><button className={analysisView === "history" ? "active" : ""} onClick={() => setAnalysisView("history")}>Histórico competitivo</button></nav>
     {analysisView === "history" ? <CompetitorHistory source={source} competitorName={competitor.name}/> : <>
@@ -207,6 +211,7 @@ export default function CompetitorComparison() {
 
     <section className="filters comparison-filters">
       <input aria-label="Buscar productos comparados" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP, marca o referencia"/>
+      <select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select aria-label="Categoría" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select aria-label="Posición competitiva" value={position} onChange={(event) => setPosition(event.target.value)}><option value="all">Todas las posiciones</option><option value="daka_lower">DAKA más económico</option><option value="competitor_lower">{competitor.name} más económico</option><option value="equal">Mismo precio</option></select>
       <select aria-label="Orden" value={sort} onChange={(event) => setSort(event.target.value)}><option value="gap_desc">Mayor brecha primero</option><option value="gap_asc">Menor brecha primero</option><option value="confidence">Mayor confianza</option><option value="recent">Captura más reciente</option></select>
