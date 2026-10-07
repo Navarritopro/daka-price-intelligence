@@ -96,10 +96,10 @@ function sourceSchedule(source: string): SourceSchedule {
   };
   if (source === "soytechno") return {
     time: "09:59 a. m. VET",
-    mode: "GitHub Actions · principal + 2 respaldos",
+    mode: "Equipo local · tarea independiente",
     primaryMinute: 9 * 60 + 59,
-    backupMinutes: [11 * 60 + 59, 13 * 60 + 59],
-    backupLabels: ["11:59 a. m.", "1:59 p. m."]
+    backupMinutes: [],
+    backupLabels: []
   };
   return { time: "09:00 a. m. VET", mode: "Equipo local · temporal", primaryMinute: 9 * 60, backupMinutes: [], backupLabels: [] };
 }
@@ -146,6 +146,16 @@ function getHealth(source: MonitoringSourceSummary, jobs: JobSummary[], now: num
   const competitor = source.source !== "daka";
   const graceMinutes = 45;
   if (competitor && !hasSuccessToday && currentVet.minute >= schedule.primaryMinute + graceMinutes) {
+    if (source.source === "soytechno") {
+      return {
+        level: "warning",
+        label: "Pendiente de hoy",
+        detail: "La tarea local de SoyTechno todavía no registra una captura exitosa hoy; revise el Programador de tareas y logs\\soytechno.log",
+        latest,
+        latestSuccess,
+        dropPercent
+      };
+    }
     const nextBackup = schedule.backupMinutes.findIndex((minute) => currentVet.minute < minute);
     const detail = nextBackup >= 0
       ? `GitHub aún no ha completado la captura de hoy. Próximo respaldo: ${schedule.backupLabels[nextBackup]} VET`
@@ -241,7 +251,7 @@ export default function TechnicalMonitoring({
 
   return (
     <main className="operations-shell">
-      <section className="operations-top">
+      <section className="operations-top" data-tour="monitoring-header">
         <div>
           <div className={`service-status ${selectedHealth?.level ?? "healthy"}`}>
             {selectedSource === "all" ? "Visión consolidada de las fuentes" : selectedHealth?.label ?? "Sin información"}
@@ -253,12 +263,14 @@ export default function TechnicalMonitoring({
           <button className="primary-button operations-run" onClick={onSendTelegramReport} disabled={reportSending}>✉ {reportSending ? "Solicitando reporte…" : "Enviar resumen por Telegram"}</button>
         ) : selectedSource === "daka" && canAdmin ? (
           <button className="primary-button operations-run" onClick={onTriggerDaka} disabled={executionBusy}>▶ {executionBusy ? "Ejecución pendiente" : "Iniciar DAKA manualmente"}</button>
+        ) : selectedSource === "soytechno" ? (
+          <span className="primary-button operations-link">PC local · tarea programada</span>
         ) : isCompetitor ? (
           <a className="primary-button operations-link" href={`https://github.com/Navarritopro/daka-price-intelligence/actions/workflows/scrape-${selectedSource}.yml`} target="_blank" rel="noreferrer">Abrir GitHub Actions ↗</a>
         ) : null}
       </section>
 
-      <nav className="monitor-source-tabs" aria-label="Fuentes del monitoreo">
+      <nav className="monitor-source-tabs" aria-label="Fuentes del monitoreo" data-tour="monitoring-source-tabs">
         <button className={selectedSource === "all" ? "active" : ""} onClick={() => setSelectedSource("all")}>Resumen general</button>
         <button className={selectedSource === "daka" ? "active" : ""} onClick={() => setSelectedSource("daka")}>DAKA</button>
         <button className={selectedSource === "damasco" ? "active" : ""} onClick={() => setSelectedSource("damasco")}>Damasco</button>
@@ -270,7 +282,7 @@ export default function TechnicalMonitoring({
 
       {selectedSource === "all" ? (
         <>
-          <section className="source-health-grid">
+          <section className="source-health-grid" data-tour="monitoring-summary">
             {sourceHealth.map(({ source, health }) => {
               const sourceJobs = jobs.filter((job) => job.source === source.source);
               const successful = sourceJobs.filter((job) => job.status === "success");
@@ -288,7 +300,7 @@ export default function TechnicalMonitoring({
               );
             })}
           </section>
-          <section className="operations-panel consolidated-history">
+          <section className="operations-panel consolidated-history" data-tour="monitoring-activity">
             <div className="operations-head"><h2>Actividad reciente de todas las fuentes</h2><small>Últimos {Math.min(jobs.length, 20)} procesos</small></div>
             <div className="table-scroll"><table className="operations-table"><thead><tr><th>Fuente</th><th>Inicio real</th><th>Finalización</th><th>Origen</th><th>Productos</th><th>Duración</th><th>Resultado</th></tr></thead><tbody>{jobs.slice(0, 20).map((job) => <tr key={job.id}><td><button className="source-table-link" onClick={() => setSelectedSource(job.source)}>{job.sourceName}</button></td><td>{formatDate(job.startedAt)}</td><td>{formatDate(job.finishedAt)}</td><td>{job.triggerType}</td><td>{integer.format(job.productsSaved)}</td><td>{formatDuration(job.durationSeconds)}</td><td><span className={`job-badge ${job.status}`}>{statusText(job.status)}</span></td></tr>)}</tbody></table></div>
           </section>

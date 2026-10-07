@@ -197,10 +197,10 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
   }
 
   return <>
-    <nav className="competitor-source-tabs" aria-label="Competidor seleccionado">
+    <nav className="competitor-source-tabs" aria-label="Competidor seleccionado" data-tour="comparison-source-tabs">
       {(Object.entries(COMPETITORS) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={source === slug ? "active" : ""} onClick={() => { setSource(slug); setCategory(""); setBrand(""); setMode("comparison"); }}>{item.name}</button>)}
     </nav>
-    <nav className="comparison-view-tabs" aria-label="Tipo de análisis competitivo"><button className={analysisView === "current" ? "active" : ""} onClick={() => setAnalysisView("current")}>Posición actual</button><button className={analysisView === "history" ? "active" : ""} onClick={() => setAnalysisView("history")}>Histórico competitivo</button></nav>
+    <nav className="comparison-view-tabs" aria-label="Tipo de análisis competitivo" data-tour="comparison-view-tabs"><button className={analysisView === "current" ? "active" : ""} onClick={() => setAnalysisView("current")}>Posición actual</button><button className={analysisView === "history" ? "active" : ""} onClick={() => setAnalysisView("history")}>Histórico competitivo</button></nav>
     {analysisView === "history" ? <CompetitorHistory source={source} competitorName={competitor.name}/> : <>
     <section className="competitor-overview">
       <div><span className="eyebrow-dark">Benchmarking competitivo · Multicompetidor</span><h2>DAKA frente a {competitor.name}</h2><p>Solo se comparan productos equivalentes con coincidencia automática de alta confianza o validación confirmada.</p></div>
@@ -213,7 +213,7 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
       </div>
     </section>
 
-    <section className="comparison-stats">
+    <section className="comparison-stats" data-tour="comparison-summary">
       <article><span>Catálogo {competitor.name}</span><strong>{loading ? "…" : integer.format(stats.competitorProducts)}</strong><small>Productos monitoreados</small></article>
       <article><span>Productos homologados</span><strong>{loading ? "…" : integer.format(stats.matchedProducts)}</strong><small>Comparaciones confiables</small></article>
       <article className="daka-win"><span>DAKA con mejor precio</span><strong>{loading ? "…" : integer.format(stats.dakaLower)}</strong><small>Oportunidades competitivas</small></article>
@@ -221,7 +221,7 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
       <article><span>Productos por validar</span><strong>{loading ? "…" : integer.format(stats.reviewPending)}</strong><small>{integer.format(stats.reviewAlternatives)} alternativas analizadas</small></article>
     </section>
 
-    <section className="filters comparison-filters">
+    <section className="filters comparison-filters" data-tour="comparison-filters">
       <input aria-label="Buscar productos comparados" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por producto, SAP, marca o referencia"/>
       <select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select aria-label="Categoría" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
@@ -231,7 +231,7 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
 
     {error && <div className="error-banner"><strong>Comparador pendiente</strong><span>{error}. Verifica que la migración y la primera captura de {competitor.name} estén completadas.</span></div>}
 
-    <section className="comparison-grid">
+    <section className="comparison-grid" data-tour="comparison-grid">
       <article className="comparison-table-card">
         <div className="section-head"><h2>Productos comparados</h2><small>{loading ? "Consultando…" : `Mostrando ${integer.format(items.length)} de ${integer.format(total)}`}</small></div>
         {loading ? <div className="empty-state">Analizando las coincidencias DAKA–{competitor.name}…</div> : items.length === 0 ? <div className="empty-state">No existen comparaciones confiables con estos filtros.</div> : <div className="table-scroll"><table className="comparison-table"><thead><tr><th>Producto DAKA</th><th>DAKA</th><th>{competitor.name}</th><th>Diferencia</th><th>Posición</th></tr></thead><tbody>{items.map((item) => <tr key={item.matchId} className={selected?.matchId === item.matchId ? "selected-comparison" : ""} onClick={() => setSelected(item)}><td><b>{item.daka.name}</b><small>SAP {item.daka.externalId} · {item.daka.category ?? "Sin categoría"}</small></td><td><strong>{money.format(item.daka.price)}</strong><small>{item.daka.inStock === false ? "Sin stock" : "Disponible"}</small></td><td><strong>{money.format(item.competitor.price)}</strong><small>{item.competitor.externalId}</small></td><td className={item.differenceUsd <= 0 ? "comparison-favorable" : "comparison-unfavorable"}><b>{item.differenceUsd > 0 ? "+" : ""}{money.format(item.differenceUsd)}</b><small>{item.differencePct > 0 ? "+" : ""}{item.differencePct.toFixed(1)}%</small></td><td><span className={`position-badge ${item.differenceUsd < 0 ? "daka" : item.differenceUsd > 0 ? "damasco" : "equal"}`}>{positionLabel(item, competitor.name)}</span></td></tr>)}</tbody></table></div>}

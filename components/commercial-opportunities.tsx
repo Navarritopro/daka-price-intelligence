@@ -243,12 +243,12 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
   }, [selected]);
 
   return <section className="commercial-opportunities">
-    <header className="opportunity-head">
+    <header className="opportunity-head" data-tour="opportunity-head">
       <div><span className="eyebrow-dark">Inteligencia accionable · Últimas capturas exitosas</span><h2>Centro de oportunidades comerciales</h2><p>Prioriza señales de precio y disponibilidad sin sustituir la decisión comercial ni asumir rentabilidad.</p></div>
       <div><span>Actualización del análisis</span><strong>{formatDate(generatedAt)}</strong><small>Capturas mayores a {freshnessHours} horas se marcan como informativas.</small></div>
     </header>
 
-    <div className="opportunity-summary">
+    <div className="opportunity-summary" data-tour="opportunity-summary">
       <article className="opportunity-priority"><span>Prioridad crítica o alta</span><strong>{loading ? "…" : integer.format(stats.prioritized)}</strong><small>Requieren revisión comercial</small></article>
       <article className="opportunity-risk"><span>Riesgos de precio</span><strong>{loading ? "…" : integer.format(stats.priceRisks)}</strong><small>DAKA ≥ {minimumGap}% por encima</small></article>
       <article className="opportunity-win"><span>Ventajas de precio</span><strong>{loading ? "…" : integer.format(stats.priceAdvantages)}</strong><small>DAKA ≥ {minimumGap}% por debajo</small></article>
@@ -256,7 +256,7 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
       <article className="opportunity-win"><span>Ventajas de disponibilidad</span><strong>{loading ? "…" : integer.format(stats.availabilityAdvantages)}</strong><small>Competencia sin disponibilidad</small></article>
     </div>
 
-    <div className="opportunity-filters">
+    <div className="opportunity-filters" data-tour="opportunity-filters">
       <input aria-label="Buscar oportunidad" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, SAP, marca o referencia"/>
       <select aria-label="Competidor" value={source} onChange={(event) => { setSource(event.target.value); setBrand(""); setCategory(""); }}><option value="all">Todos los competidores</option>{Object.entries(COMPETITORS).map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}</select>
       <select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select>
@@ -268,7 +268,7 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
       <select aria-label="Orden de oportunidades" value={sort} onChange={(event) => setSort(event.target.value as OpportunitySort)}><option value="priority">Prioridad comercial</option><option value="competitor_asc">Competencia A–Z</option><option value="competitor_desc">Competencia Z–A</option><option value="gap_usd_desc">Mayor brecha USD</option><option value="gap_usd_asc">Menor brecha USD</option><option value="gap_pct_desc">Mayor brecha %</option><option value="gap_pct_asc">Menor brecha %</option></select>
     </div>
 
-    <div className="opportunity-actions" aria-label="Acciones del reporte">
+    <div className="opportunity-actions" aria-label="Acciones del reporte" data-tour="opportunity-actions">
       <div><strong>Reporte con los filtros seleccionados</strong><small>Incluye todas las oportunidades encontradas, aunque todavía no estén cargadas en la tabla.</small></div>
       <div>
         <a className="opportunity-export-button" href={`/api/opportunities/export?format=xlsx&${reportParameters().toString()}`}>Descargar Excel</a>
@@ -281,7 +281,7 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
     {error && <div className="error-banner"><strong>Análisis pendiente</strong><span>{error}</span></div>}
     {stats.stale > 0 && <div className="opportunity-freshness-warning"><strong>{integer.format(stats.stale)} productos con datos por actualizar</strong><span>No se presentan como oportunidades confirmadas hasta que las fuentes completen una nueva ejecución exitosa.</span></div>}
 
-    <article className="opportunity-table-card">
+    <article className="opportunity-table-card" data-tour="opportunity-table">
       <div className="section-head"><div><h2>Oportunidades detectadas</h2><small className="section-explanation">Un producto DAKA aparece una sola vez; el detalle reúne todos sus competidores homologados.</small></div><small>{loading ? "Analizando…" : `Mostrando ${integer.format(items.length)} de ${integer.format(total)}`}</small></div>
       {loading ? <div className="empty-state">Calculando señales comerciales con las últimas capturas exitosas…</div> : items.length === 0 ? <div className="empty-state">No se encontraron oportunidades con los filtros seleccionados.</div> : <div className="table-scroll"><table className="opportunity-table"><thead><tr><th>Prioridad</th><th>Producto DAKA</th><th><button className="opportunity-sort-button" onClick={toggleCompetitorSort}>Competencia principal <span aria-hidden="true">{sort === "competitor_asc" ? "↑" : sort === "competitor_desc" ? "↓" : "↕"}</span></button></th><th>Situación</th><th>Precio DAKA</th><th>Precio competencia</th><th><button className="opportunity-sort-button" onClick={toggleGapSort}>Brecha <span aria-hidden="true">{sort === "gap_usd_asc" ? "↑" : sort === "gap_usd_desc" ? "↓" : "↕"}</span></button></th><th>Disponibilidad</th><th>Detectado</th><th>Detalle</th></tr></thead><tbody>{items.map((item) => {
         const primaryComparison = item.comparisons.find((entry) => entry.source === item.primary.source && entry.signal?.type === item.primary.type)

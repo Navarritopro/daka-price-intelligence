@@ -7,6 +7,7 @@ import CommercialOpportunities from "@/components/commercial-opportunities";
 import DamascoCatalog from "@/components/damasco-catalog";
 import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
+import OnboardingCenter, { type OnboardingNavigationTarget } from "@/components/onboarding-center";
 
 type PricePoint = {
   price: number | null;
@@ -587,18 +588,39 @@ export default function Dashboard() {
   const latestCapture = history[0] ?? null;
   const selectedChange = changeProducts.find((product) => product.id === selected?.id) ?? null;
 
+  const navigateFromOnboarding = useCallback((target: OnboardingNavigationTarget) => {
+    setHistoryMode(false);
+    if (target === "monitoring") {
+      setView("operations");
+      return;
+    }
+    setView("prices");
+    if (target === "explore") {
+      setPriceTab("explore");
+      setProductStatus("current");
+      resetProductScroll();
+    } else if (target === "competitors") {
+      setPriceTab("damasco");
+    } else if (target === "comparison") {
+      setPriceTab("competitors");
+    } else {
+      setPriceTab("opportunities");
+    }
+  }, [resetProductScroll]);
+
   return (
     <div className="app-wrap">
       {notice && <div className="notice" role="status">{notice}</div>}
       <header className="app-header">
         <div className="brand">DAKA <span>PRICE LAB</span></div>
-        <nav className="module-nav" aria-label="Módulos principales">
+        <nav className="module-nav" aria-label="Módulos principales" data-tour="module-nav">
           <button className={view === "prices" ? "module-button active" : "module-button"} onClick={() => setView("prices")}>Inteligencia de precios</button>
           <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => setView("operations")}>Monitoreo técnico</button>
         </nav>
         <div className="header-actions">
           <span className="next-run">Competidores · 09:07–09:33 AM VET</span>
           {currentRole === "admin" && <button className="primary-button" onClick={triggerScrape} disabled={executionBusy}>{running ? "Iniciando…" : executionBusy ? "Ejecución pendiente" : "Actualizar datos ahora"}</button>}
+          <OnboardingCenter role={currentRole} onNavigate={navigateFromOnboarding}/>
           <SessionControls onRole={setCurrentRole}/>
         </div>
       </header>
@@ -607,7 +629,7 @@ export default function Dashboard() {
 
       {view === "prices" ? (
         <main>
-          <section className="hero-grid">
+          <section className="hero-grid" data-tour="dashboard-summary">
             <article className="intro-card"><div className="eyebrow">Inteligencia de precios · Fases 1 y 2</div><h1>El mercado y el histórico de DAKA, en una sola vista.</h1><p>Seguimiento diario en USD, variaciones históricas y comparación competitiva con homologación auditable.</p></article>
             <div className="hero-stats">
               <article className="stat-card"><span>Catálogo actual</span><strong>{loading ? "…" : integer.format(summary?.productsMonitored ?? 0)}</strong><em>{integer.format(summary?.productsHistorical ?? 0)} históricos · {integer.format(summary?.productsNotSeen ?? 0)} no vistos</em></article>
@@ -617,20 +639,20 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("changes"); }}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("damasco"); }}>Catálogos competencia</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("competitors"); }}>Comparador</button><button className={priceTab === "opportunities" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("opportunities"); }}>Oportunidades comerciales</button></div>
+          <div className="tabs" data-tour="intelligence-tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("changes"); }}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("damasco"); }}>Catálogos competencia</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("competitors"); }}>Comparador</button><button className={priceTab === "opportunities" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("opportunities"); }}>Oportunidades comerciales</button></div>
           {priceTab === "explore" ? <>
           {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo por producto</strong><span>Selecciona un producto para consultar todas sus capturas, incluyendo los registros donde el precio no cambió.</span></div><button onClick={openExplorePrices}>Volver al catálogo actual</button></div>}
-          <section className="filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>
+          <section className="filters" data-tour="catalog-filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>
 
           <section className="content-grid">
-            <article className="product-list"><div className="section-head"><h2>{historyMode ? "Productos con histórico" : productStatus === "current" ? "Catálogo actual" : productStatus === "missing" ? "No vistos en última captura" : "Catálogo histórico"}</h2><small>{productsLoading ? "Consultando catálogo…" : `Mostrando ${integer.format(products.length)} de ${integer.format(totalProducts)}`}</small></div><div className="product-scroll" ref={productListRef} onScroll={handleProductScroll}>
+            <article className="product-list" data-tour="daka-catalog-list"><div className="section-head"><h2>{historyMode ? "Productos con histórico" : productStatus === "current" ? "Catálogo actual" : productStatus === "missing" ? "No vistos en última captura" : "Catálogo histórico"}</h2><small>{productsLoading ? "Consultando catálogo…" : `Mostrando ${integer.format(products.length)} de ${integer.format(totalProducts)}`}</small></div><div className="product-scroll" ref={productListRef} onScroll={handleProductScroll}>
               {productsLoading && <div className="empty-state">Buscando productos en todo el catálogo…</div>}
               {!productsLoading && productLoadError && products.length === 0 && <div className="empty-state product-error">{productLoadError}</div>}
               {!productsLoading && !productLoadError && products.length === 0 && <div className="empty-state">No encontramos productos con ese nombre o código SAP.</div>}
               {products.map((product, index) => <button key={product.id} aria-posinset={index + 1} aria-setsize={totalProducts} className={selected?.id === product.id ? "product-row active" : "product-row"} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.category ?? "Sin categoría"}</p>{!product.seenInLatest && <span className="product-status-badge">No visto en última captura</span>}</div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span></div></button>)}
               {products.length > 0 && <div className="product-load-state">{loadingMoreProducts ? "Cargando más productos…" : hasMoreProducts ? "Desplázate para continuar cargando" : "Se mostraron todos los productos"}{productLoadError && products.length > 0 ? ` · ${productLoadError}` : ""}</div>}
             </div></article>
-            <article className="detail-card">
+            <article className="detail-card" data-tour="daka-product-detail">
               {selected ? <><div className="detail-main"><div className="detail-title"><div><h2>{selected.name}</h2><div className="meta"><span className="source-badge">D</span> Tiendas Daka · SAP {selected.externalId}</div>{!selected.seenInLatest && <div className="product-missing-notice">No fue visto en la última captura. Se muestra su último precio histórico.</div>}</div><div className="current-price"><span className="meta">{selected.seenInLatest ? "Precio actual" : "Último precio registrado"}</span><strong>{selected.currentPrice == null ? "Sin precio" : money.format(selected.currentPrice)}</strong><span className={`variation ${changeClass(selected.changePct)}`}>{selected.changePct == null ? "Sin comparación" : `${selected.changePct > 0 ? "+" : ""}${selected.changePct.toFixed(1)}% vs. captura anterior`}</span></div></div>
                 {historyMode && latestCapture && <div className="price-comparison-strip"><div><span>Precio anterior</span><strong>{latestCapture.previousPrice == null ? "Sin comparación" : money.format(latestCapture.previousPrice)}</strong></div><span className="comparison-arrow">→</span><div><span>Precio actual</span><strong>{latestCapture.price == null ? "Sin precio" : money.format(latestCapture.price)}</strong></div><div className={changeClass(latestCapture.differenceUsd)}><span>Último movimiento</span><strong>{latestCapture.differenceUsd == null ? "Sin variación" : `${latestCapture.differenceUsd > 0 ? "+" : ""}${money.format(latestCapture.differenceUsd)}`}</strong><small>{latestCapture.changePct == null ? "" : `${latestCapture.changePct > 0 ? "+" : ""}${latestCapture.changePct.toFixed(1)}%`}</small></div></div>}
                 {history.length ? <svg className="price-chart" viewBox="0 0 760 245" role="img" aria-label="Histórico de precio"><defs><linearGradient id="priceArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1258d9" stopOpacity=".2"/><stop offset="1" stopColor="#1258d9" stopOpacity="0"/></linearGradient></defs><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-area" d={chart.area}/><path className="chart-line" d={chart.line}/>{(historyMode ? chart.dots : chart.dots.slice(-1)).map((dot, index) => <circle key={`${dot.scrapedAt}-${index}`} className="chart-point" cx={dot.x} cy={dot.y} r={historyMode ? "4" : "5"}><title>{`${formatDate(dot.scrapedAt)} · ${money.format(dot.price)}`}</title></circle>)}</svg> : <div className="chart-empty">El gráfico aparecerá después de la primera captura.</div>}

@@ -1,23 +1,7 @@
-CREATE TABLE IF NOT EXISTS app_users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT NOT NULL,
-  name TEXT NOT NULL,
-  password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'viewer')),
-  onboarding_mode TEXT NOT NULL DEFAULT 'automatic' CHECK (onboarding_mode IN ('automatic', 'optional')),
-  active BOOLEAN NOT NULL DEFAULT TRUE,
-  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-  locked_until TIMESTAMPTZ,
-  last_login_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Migración aditiva para onboarding y centro de ayuda.
+-- Es segura para volver a ejecutar: no modifica el progreso ya registrado.
+BEGIN;
 
-CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_unique
-  ON app_users (LOWER(email));
-
--- Los usuarios existentes reciben una invitación opcional. Los usuarios creados
--- después de esta migración conservan el valor por defecto "automatic".
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -52,3 +36,5 @@ CREATE TABLE IF NOT EXISTS app_onboarding_progress (
 
 CREATE INDEX IF NOT EXISTS idx_onboarding_progress_user_updated
   ON app_onboarding_progress (user_id, updated_at DESC);
+
+COMMIT;
