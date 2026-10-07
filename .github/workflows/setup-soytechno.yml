@@ -1,0 +1,45 @@
+name: Preparar integración SoyTechno
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Escribe CONFIGURAR para registrar SoyTechno"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    if: ${{ inputs.confirm == 'CONFIGURAR' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Validar conexión configurada
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}" || { echo "Falta el secreto DATABASE_URL"; exit 1; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT current_database()"
+
+      - name: Registrar fuente SoyTechno
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase6_soytechno.sql
+
+      - name: Verificar integración
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_name="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT name FROM sources WHERE slug = 'soytechno' AND active = TRUE")"
+          test "$source_name" = "SoyTechno" || { echo "SoyTechno no quedó registrada"; exit 1; }
+          {
+            echo "## Integración SoyTechno preparada"
+            echo "La fuente **SoyTechno** está activa en PostgreSQL."
+            echo "Siguiente paso: ejecutar **Probar conectividad SoyTechno**."
+          } >> "$GITHUB_STEP_SUMMARY"

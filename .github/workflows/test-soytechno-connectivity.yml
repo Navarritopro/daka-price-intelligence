@@ -1,0 +1,27 @@
+name: Probar conectividad SoyTechno
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scraper/requirements.txt
+      - name: Instalar dependencias
+        run: pip install -r scraper/requirements.txt
+      - name: Ejecutar pruebas de SoyTechno
+        run: python -m unittest scraper.tests.test_soytechno
+      - name: Consultar productos y variaciones sin escribir en PostgreSQL
+        run: python scraper/diagnose_soytechno.py

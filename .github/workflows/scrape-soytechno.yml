@@ -1,26 +1,34 @@
-name: Control operativo diario
+name: Scraping diario SoyTechno
 
 on:
-  workflow_dispatch:
   schedule:
-    # 02:30 p. m. VET, después de los intentos principales y de respaldo.
-    - cron: "30 18 * * *"
+    # 09:59 a. m. VET y respaldos condicionales a las 11:59 y 01:59 p. m.
+    - cron: "59 13 * * *"
+    - cron: "59 15 * * *"
+    - cron: "59 17 * * *"
+  workflow_dispatch:
+    inputs:
+      trigger_type:
+        description: Origen de la ejecución
+        required: false
+        default: manual
+        type: choice
+        options: [manual, local]
+
+concurrency:
+  group: soytechno-price-scraper
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
-concurrency:
-  group: daily-operational-audit
-  cancel-in-progress: false
-
 jobs:
-  audit:
+  scrape:
+    if: github.event_name == 'workflow_dispatch' || vars.SOYTECHNO_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      MONITORED_SOURCES: ${{ vars.MONITORED_SOURCES || 'daka,damasco,multimax,ivoo,venelectronics,soytechno' }}
-      MAX_SUCCESS_AGE_HOURS: ${{ vars.MAX_SUCCESS_AGE_HOURS || '36' }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       SMTP_HOST: ${{ vars.SMTP_HOST }}
@@ -29,6 +37,7 @@ jobs:
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       ALERT_EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM }}
       ALERT_EMAIL_TO: ${{ vars.ALERT_EMAIL_TO }}
+      TRIGGER_TYPE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.trigger_type || 'manual' }}
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
@@ -40,5 +49,7 @@ jobs:
           cache-dependency-path: scraper/requirements.txt
       - name: Instalar dependencias
         run: pip install -r scraper/requirements.txt
-      - name: Verificar capturas recientes
-        run: python scraper/health_audit.py
+      - name: Ejecutar pruebas
+        run: python -m unittest discover -s scraper/tests -p "test_*.py"
+      - name: Extraer SoyTechno y actualizar homologación
+        run: python scraper/soytechno.py

@@ -51,6 +51,7 @@ jobs:
           psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase3_multimax.sql
           psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase4_ivoo.sql
           psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase5_venelectronics.sql
+          psql "$TEMP_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/phase6_soytechno.sql
 
       - name: Validar estructura creada
         shell: bash
