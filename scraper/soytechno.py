@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import html
 import re
 import sys
 import time
@@ -17,7 +18,10 @@ from notifications import notify_failure
 
 
 BASE_URL = "https://soytechno.com"
-API_URL = os.getenv("SOYTECHNO_API_URL", f"{BASE_URL}/wp-json/wc/store/v1/products")
+# SoyTechno protege la forma /wp-json/ con autenticación adicional. WordPress
+# expone el mismo endpoint público mediante rest_route, que conserva la API
+# Store de WooCommerce sin depender de credenciales privadas.
+API_URL = os.getenv("SOYTECHNO_API_URL", f"{BASE_URL}/?rest_route=/wc/store/v1/products")
 VENEZUELA_TZ = ZoneInfo("America/Caracas")
 EXCLUDED_NAMES = ("producto de prueba", "producto especial soytechno")
 CATEGORY_LABELS = {
@@ -173,12 +177,12 @@ class SoyTechnoScraper:
                       homologation_eligible: bool = True) -> Product | None:
         product_id = str(raw.get("id") or "").strip()
         sku = str(raw.get("sku") or "").strip()
-        name = str(raw.get("name") or "").strip()
+        name = html.unescape(str(raw.get("name") or "")).strip()
         if not product_id or not name or self._excluded(name):
             return None
         if is_variation and not sku:
             return None
-        variation = str(raw.get("variation") or "").strip()
+        variation = html.unescape(str(raw.get("variation") or "")).strip()
         display_name = name if not variation or variation.lower() in name.lower() else f"{name} · {variation}"
         prices = raw.get("prices") or {}
         currency = str(prices.get("currency_code") or "USD").upper()

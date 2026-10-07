@@ -207,6 +207,8 @@ SoyTechno se integra mediante la API pública Store de WooCommerce. Cada variaci
 que posea SKU propio se conserva como producto independiente. Los productos padre
 con opciones ambiguas permanecen visibles en el catálogo, pero se excluyen de la
 homologación automática. También se excluyen los productos de prueba acordados.
+La consulta utiliza la forma pública `?rest_route=/wc/store/v1/products`, porque
+el sitio protege su ruta equivalente `/wp-json/` con autenticación adicional.
 
 Despliegue controlado:
 

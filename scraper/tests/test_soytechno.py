@@ -7,7 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from soytechno import SoyTechnoScraper
+from soytechno import API_URL, SoyTechnoScraper
 
 
 def product_fixture(**overrides):
@@ -30,6 +30,10 @@ class SoyTechnoScraperTests(unittest.TestCase):
         self.scraper = SoyTechnoScraper()
         self.captured_at = datetime(2026, 10, 7, tzinfo=timezone.utc)
 
+    def test_uses_public_rest_route_instead_of_protected_wp_json_path(self):
+        self.assertIn("rest_route=/wc/store/v1/products", API_URL)
+        self.assertNotIn("/wp-json/", API_URL)
+
     def test_parses_public_price_list_price_identity_and_stock(self):
         product = self.scraper.parse_product(product_fixture(), self.captured_at)
         self.assertIsNotNone(product)
@@ -41,6 +45,10 @@ class SoyTechnoScraperTests(unittest.TestCase):
         self.assertEqual(product.category, "Televisores")
         self.assertTrue(product.in_stock)
         self.assertIsNone(product.available_quantity)
+
+    def test_decodes_html_entities_in_product_name(self):
+        product = self.scraper.parse_product(product_fixture(name="Laptop HP &#8211; 16GB"), self.captured_at)
+        self.assertEqual(product.name, "Laptop HP – 16GB")
 
     def test_parses_variation_with_own_sku(self):
         product = self.scraper.parse_product(product_fixture(
