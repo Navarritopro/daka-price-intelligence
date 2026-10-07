@@ -3,7 +3,7 @@ import { asNumber, getSql } from "@/lib/db";
 import { resolveComparisonPeriod } from "@/lib/comparison-period";
 
 export const dynamic = "force-dynamic";
-const SOURCES = ["damasco", "multimax", "ivoo", "venelectronics"];
+const SOURCES = ["damasco", "multimax", "ivoo", "venelectronics", "soytechno"];
 
 export async function GET(request: NextRequest, context: { params: Promise<{ matchId: string }> }) {
   try {

@@ -14,7 +14,8 @@ const COMPETITORS = {
   damasco: "Damasco",
   multimax: "Multimax",
   ivoo: "IVOO",
-  venelectronics: "Venelectronics"
+  venelectronics: "Venelectronics",
+  soytechno: "SoyTechno"
 } as const;
 
 export type CompetitorSource = keyof typeof COMPETITORS;
@@ -204,7 +205,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       FROM product_matches pm
       JOIN products d ON d.id = pm.daka_product_id
       JOIN products c ON c.id = pm.competitor_product_id
-      JOIN sources cs ON cs.id = c.source_id AND cs.slug IN ('damasco', 'multimax', 'ivoo', 'venelectronics')
+      JOIN sources cs ON cs.id = c.source_id AND cs.slug IN ('damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
       JOIN latest_jobs dlj ON dlj.source_id = (SELECT id FROM daka_source)
       JOIN latest_jobs clj ON clj.source_id = cs.id
       JOIN price_history dp ON dp.product_id = d.id AND dp.job_id = dlj.id

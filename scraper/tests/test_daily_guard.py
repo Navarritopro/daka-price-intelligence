@@ -12,6 +12,7 @@ import damasco
 import ivoo
 import multimax
 import venelectronics
+import soytechno
 
 
 class DailyCaptureGuardTests(unittest.TestCase):
@@ -49,6 +50,13 @@ class DailyCaptureGuardTests(unittest.TestCase):
         database_class.return_value.has_successful_job_today.return_value = True
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql://test", "TRIGGER_TYPE": "scheduled"}):
             self.assertEqual(venelectronics.main(), 0)
+        database_class.return_value.create_job.assert_not_called()
+
+    @patch("soytechno.Database")
+    def test_soytechno_scheduled_backup_skips_existing_daily_success(self, database_class):
+        database_class.return_value.has_successful_job_today.return_value = True
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://test", "TRIGGER_TYPE": "scheduled"}):
+            self.assertEqual(soytechno.main(), 0)
         database_class.return_value.create_job.assert_not_called()
 
 

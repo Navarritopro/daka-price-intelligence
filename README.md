@@ -1,6 +1,6 @@
 # DAKA Price Lab
 
-Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el catálogo de DAKA, conserva el histórico en USD y compara productos homologados con Damasco, Multimax, IVOO y Venelectronics.
+Aplicación de inteligencia de precios para Tiendas Daka. Captura diariamente el catálogo de DAKA, conserva el histórico en USD y compara productos homologados con Damasco, Multimax, IVOO, Venelectronics y SoyTechno.
 
 ## Alcance de la Fase 1
 
@@ -200,6 +200,25 @@ Despliegue controlado:
 
 Los horarios son 9:46 a. m., 11:46 a. m. y 1:46 p. m. VET. Los respaldos se
 omiten automáticamente cuando ya existe una captura exitosa del día.
+
+## Fase 6: SoyTechno
+
+SoyTechno se integra mediante la API pública Store de WooCommerce. Cada variación
+que posea SKU propio se conserva como producto independiente. Los productos padre
+con opciones ambiguas permanecen visibles en el catálogo, pero se excluyen de la
+homologación automática. También se excluyen los productos de prueba acordados.
+
+Despliegue controlado:
+
+1. Publicar los archivos de la fase 6.
+2. Ejecutar **Preparar integración SoyTechno** y escribir `CONFIGURAR`; registra la fuente sin usar terminal.
+3. Ejecutar **Probar conectividad SoyTechno**; consulta una muestra sin escribir en PostgreSQL.
+4. Ejecutar manualmente **Scraping diario SoyTechno** para crear la primera captura.
+5. Validar catálogo, histórico, disponibilidad, comparador, oportunidades y monitoreo.
+6. Crear la variable de GitHub Actions `SOYTECHNO_ENABLED=true`.
+
+Los horarios son 9:59 a. m., 11:59 a. m. y 1:59 p. m. VET. Los respaldos se
+omiten automáticamente cuando ya existe una captura exitosa de SoyTechno ese día.
 
 ## Centro de oportunidades comerciales
 

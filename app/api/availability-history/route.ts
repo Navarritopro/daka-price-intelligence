@@ -4,7 +4,7 @@ import { resolveComparisonPeriod } from "@/lib/comparison-period";
 
 export const dynamic = "force-dynamic";
 
-const SOURCES = ["daka", "damasco", "multimax", "ivoo", "venelectronics"] as const;
+const SOURCES = ["daka", "damasco", "multimax", "ivoo", "venelectronics", "soytechno"] as const;
 const MOVEMENTS = ["all", "up", "down", "same", "restocked", "out", "unquantified"] as const;
 
 export async function GET(request: NextRequest) {
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     const seriesRows = await sql`
       WITH selected_sources AS (
         SELECT id, slug, name FROM sources
-        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
+        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
           AND (${source} = 'all' OR slug = ${source})
       ), daily_jobs AS (
         SELECT DISTINCT ON (source_id, capture_date)
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     const statsRows = await sql`
       WITH selected_sources AS (
         SELECT id, slug FROM sources
-        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
+        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
           AND (${source} = 'all' OR slug = ${source})
       ), daily_jobs AS (
         SELECT DISTINCT ON (source_id, capture_date) id, source_id, capture_date
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
     const productRows = await sql`
       WITH selected_sources AS (
         SELECT id, slug, name FROM sources
-        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
+        WHERE slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
           AND (${source} = 'all' OR slug = ${source})
       ), daily_jobs AS (
         SELECT DISTINCT ON (source_id, capture_date) id, source_id, capture_date
@@ -185,7 +185,7 @@ export async function GET(request: NextRequest) {
     const categoryRows = await sql`
       SELECT DISTINCT p.category
       FROM products p JOIN sources s ON s.id = p.source_id
-      WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
+      WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
         AND (${source} = 'all' OR s.slug = ${source})
         AND p.category IS NOT NULL AND p.category <> ''
       ORDER BY p.category
@@ -193,7 +193,7 @@ export async function GET(request: NextRequest) {
     const brandRows = await sql`
       SELECT MIN(TRIM(p.brand)) AS brand
       FROM products p JOIN sources s ON s.id = p.source_id
-      WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics')
+      WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
         AND (${source} = 'all' OR s.slug = ${source})
         AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
       GROUP BY LOWER(TRIM(p.brand))

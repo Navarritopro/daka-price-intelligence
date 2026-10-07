@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics";
+type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type OpportunityType = "price_risk" | "price_advantage" | "availability_risk" | "availability_advantage" | "stale_data";
 type Priority = "critical" | "high" | "medium" | "informative";
 type OpportunitySort = "priority" | "competitor_asc" | "competitor_desc" | "gap_usd_desc" | "gap_usd_asc" | "gap_pct_desc" | "gap_pct_asc";
@@ -83,7 +83,8 @@ const COMPETITORS: Record<CompetitorSource, string> = {
   damasco: "Damasco",
   multimax: "Multimax",
   ivoo: "IVOO",
-  venelectronics: "Venelectronics"
+  venelectronics: "Venelectronics",
+  soytechno: "SoyTechno"
 };
 const EMPTY_STATS: OpportunityStats = {
   total: 0, prioritized: 0, priceRisks: 0, priceAdvantages: 0,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import AvailabilityHistory from "@/components/availability-history";
 
-export type AvailabilitySource = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics";
+export type AvailabilitySource = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 
 type AvailabilityMovement = "up" | "down" | "same" | "restocked" | "out" | "unquantified" | "no_baseline" | "not_seen";
 type AvailabilityItem = {

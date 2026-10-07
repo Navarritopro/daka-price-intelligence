@@ -7,7 +7,7 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 
 
-MATCH_ENGINE_VERSION = "2.2"
+MATCH_ENGINE_VERSION = "2.3"
 AUTO_THRESHOLD = 0.93
 REVIEW_THRESHOLD = 0.66
 MAX_REVIEW_CANDIDATES = 5
@@ -110,6 +110,17 @@ def normalize(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def homologation_eligible(metadata) -> bool:
+    """Keep catalog visibility separate from automatic matching eligibility."""
+    value = metadata or {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            value = {}
+    return not isinstance(value, dict) or value.get("homologationEligible", True) is not False
+
+
 def _brand_in_name(name: str) -> str | None:
     normalized = normalize(name)
     if re.search(r"\b(?:da\s*co|daco)\b", normalized):
@@ -138,6 +149,8 @@ def _is_generic_model(token: str) -> bool:
         GENERIC_MODEL.match(token)
         or GENERIC_MODEL.match(canonical)
         or canonical in GENERIC_CONNECTIVITY_MODELS
+        or re.fullmatch(r"(?:AC|AX|BE|N)\d{2,5}", canonical)
+        or re.fullmatch(r"(?:\d+(?:GB|TB|MB|RAM|ROM|SSD)){2,}", canonical)
         or re.fullmatch(r"\d+(?:MBPS|GBPS|GHZ|MHZ|PORTS?|PUERTOS?|ANTENNAS?|ANTENAS?)", canonical)
     )
 
@@ -170,6 +183,22 @@ def product_type(name: str, category: str | None = None) -> str | None:
         if re.search(pattern, normalized):
             return kind
     return None
+
+
+def processor_tokens(name: str) -> set[str]:
+    normalized = normalize(name)
+    processors = set()
+    for family in re.findall(r"\b(?:intel\s+)?core\s+(i?[3579])\b", normalized):
+        processors.add(f"intel-core-{family}")
+    for family in re.findall(r"\b(?:intel\s+)?core\s+ultra\s+([3579])\b", normalized):
+        processors.add(f"intel-core-ultra-{family}")
+    for family in re.findall(r"\bryzen\s+([3579])\b", normalized):
+        processors.add(f"amd-ryzen-{family}")
+    return processors
+
+
+def _family_models(tokens: set[str]) -> set[str]:
+    return {token for token in tokens if re.fullmatch(r"[A-Z]{1,4}\d{2,5}[A-Z0-9]*", token)}
 
 
 def _attribute_values(name: str) -> dict[str, set[float | str]]:
@@ -240,7 +269,26 @@ def similarity(left: dict, right: dict) -> tuple[float, str, dict]:
         evidence["conflicts"] = [f"Tipo: {left_type} vs {right_type}"]
         return 0.0, "type_conflict", evidence
 
-    shared_models = sorted(model_tokens(left["name"], left.get("model")) & model_tokens(right["name"], right.get("model")))
+    left_model_source = f"{left['name']} {left.get('url') or ''}"
+    right_model_source = f"{right['name']} {right.get('url') or ''}"
+    left_models = model_tokens(left_model_source, left.get("model"))
+    right_models = model_tokens(right_model_source, right.get("model"))
+    shared_models = sorted(left_models & right_models)
+    identity_sensitive_types = {"telefono", "router", "modem", "repetidor", "sistema_mesh", "access_point"}
+    left_families, right_families = _family_models(left_models), _family_models(right_models)
+    if left_type in identity_sensitive_types and right_type == left_type and left_families and right_families:
+        if left_families.isdisjoint(right_families):
+            evidence["conflicts"] = [
+                f"Modelo: {', '.join(sorted(left_families))} vs {', '.join(sorted(right_families))}"
+            ]
+            return 0.0, "model_conflict", evidence
+    left_processors, right_processors = processor_tokens(left["name"]), processor_tokens(right["name"])
+    if left_type == "laptop" and right_type == "laptop" and left_processors and right_processors:
+        if left_processors.isdisjoint(right_processors):
+            evidence["conflicts"] = [
+                f"Procesador: {', '.join(sorted(left_processors))} vs {', '.join(sorted(right_processors))}"
+            ]
+            return 0.0, "processor_conflict", evidence
     left_attributes, right_attributes = _attribute_values(left["name"]), _attribute_values(right["name"])
     shared_attributes = sorted(attribute_signature(left["name"]) & attribute_signature(right["name"]))
     numeric_conflicts = _numeric_conflicts(left_attributes, right_attributes)
@@ -308,8 +356,13 @@ def refresh_competitor_matches(database_url: str, competitor_slug: str) -> dict[
         raise ValueError("La fuente competidora debe ser distinta de DAKA")
 
     with psycopg.connect(database_url, row_factory=dict_row) as conn:
-        daka = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = 'daka'""").fetchall()]
-        competitor = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = %s""", (competitor_slug,)).fetchall()]
+        daka = [dict(row) for row in conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category, p.url FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = 'daka'""").fetchall()]
+        competitor_rows = conn.execute("""SELECT p.id, p.name, p.brand, p.model, p.category, p.url, p.metadata FROM products p JOIN sources s ON s.id = p.source_id WHERE s.slug = %s""", (competitor_slug,)).fetchall()
+        competitor = []
+        for row in competitor_rows:
+            product = dict(row)
+            if homologation_eligible(product.get("metadata")):
+                competitor.append(product)
         protected = conn.execute("""SELECT pm.daka_product_id, pm.competitor_product_id, pm.status FROM product_matches pm JOIN products c ON c.id = pm.competitor_product_id JOIN sources s ON s.id = c.source_id WHERE s.slug = %s AND pm.status IN ('confirmed', 'rejected')""", (competitor_slug,)).fetchall()
         confirmed_daka = {row["daka_product_id"] for row in protected if row["status"] == "confirmed"}
         confirmed_competitors = {row["competitor_product_id"] for row in protected if row["status"] == "confirmed"}
@@ -317,7 +370,7 @@ def refresh_competitor_matches(database_url: str, competitor_slug: str) -> dict[
 
         by_model, by_brand_type, by_brand, by_type = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
         for product in competitor:
-            for token in model_tokens(product["name"], product.get("model")): by_model[token].append(product)
+            for token in model_tokens(f"{product['name']} {product.get('url') or ''}", product.get("model")): by_model[token].append(product)
             brand = infer_brand(product["name"], product.get("brand")); kind = product_type(product["name"], product.get("category"))
             if brand: by_brand[brand].append(product)
             if kind: by_type[kind].append(product)
@@ -327,7 +380,7 @@ def refresh_competitor_matches(database_url: str, competitor_slug: str) -> dict[
         for source in daka:
             if source["id"] in confirmed_daka: continue
             candidates: dict[int, dict] = {}
-            for token in model_tokens(source["name"], source.get("model")):
+            for token in model_tokens(f"{source['name']} {source.get('url') or ''}", source.get("model")):
                 for candidate in by_model.get(token, []): candidates[candidate["id"]] = candidate
             brand = infer_brand(source["name"], source.get("brand")); kind = product_type(source["name"], source.get("category"))
             groups = []

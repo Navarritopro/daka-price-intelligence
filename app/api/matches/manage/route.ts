@@ -6,7 +6,7 @@ import { parseMatchManagementCommand } from "@/lib/match-management";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const VALID_SOURCES = new Set(["damasco", "multimax", "ivoo", "venelectronics"]);
+const VALID_SOURCES = new Set(["damasco", "multimax", "ivoo", "venelectronics", "soytechno"]);
 
 async function adminActor(request: NextRequest) {
   const user = await getRequestUser(request);

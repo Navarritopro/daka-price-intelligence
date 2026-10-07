@@ -4,10 +4,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from matching import REVIEW_THRESHOLD, attribute_signature, canonical_model, color_tokens, infer_brand, model_tokens, normalize, product_type, similarity
+from matching import REVIEW_THRESHOLD, attribute_signature, canonical_model, color_tokens, homologation_eligible, infer_brand, model_tokens, normalize, processor_tokens, product_type, similarity
 
 
 class CompetitorMatchingTests(unittest.TestCase):
+    def test_explicitly_ambiguous_product_is_not_homologated(self):
+        self.assertFalse(homologation_eligible({"homologationEligible": False}))
+        self.assertFalse(homologation_eligible('{"homologationEligible": false}'))
+        self.assertTrue(homologation_eligible({}))
+        self.assertTrue(homologation_eligible(None))
+
     def test_normalize_accents_and_symbols(self):
         self.assertEqual(normalize("TV DA+CO 55”"), "tv da co 55")
 
@@ -99,11 +105,52 @@ class CompetitorMatchingTests(unittest.TestCase):
         self.assertEqual(color_tokens("Equipo negro y azul"), {"negro", "azul"})
 
     def test_connectivity_technologies_are_not_models(self):
-        tokens = model_tokens("Módem Router ADSL2+ WiFi 6 USB3 300 Mbps")
+        tokens = model_tokens("Módem Router ADSL2+ WiFi 6 USB3 AC1200 300 Mbps")
         self.assertNotIn("ADSL2", tokens)
         self.assertNotIn("WIFI6", tokens)
         self.assertNotIn("USB3", tokens)
         self.assertNotIn("300MBPS", tokens)
+        self.assertNotIn("AC1200", tokens)
+
+    def test_phone_family_conflict_is_rejected(self):
+        score, method, evidence = similarity(
+            {"name": "Celular Galaxy A27 6GB RAM 128GB Samsung"},
+            {"name": "Celular Samsung Galaxy A26 128GB 6GB RAM"},
+        )
+        self.assertEqual(score, 0)
+        self.assertEqual(method, "model_conflict")
+        self.assertTrue(evidence["conflicts"])
+
+    def test_laptop_processor_family_conflict_is_rejected(self):
+        score, method, evidence = similarity(
+            {"name": "Laptop HP 15.6 Intel Core i5 8GB RAM 512GB SSD"},
+            {"name": "Laptop HP 15.6 Intel Core 3 8GB RAM 512GB SSD"},
+        )
+        self.assertEqual(score, 0)
+        self.assertEqual(method, "processor_conflict")
+        self.assertEqual(processor_tokens("Intel Core i5"), {"intel-core-i5"})
+        self.assertTrue(evidence["conflicts"])
+
+    def test_product_url_disambiguates_network_model(self):
+        daka = {
+            "name": "Router Inalámbrico Gigabit Doble Banda AC1200 TP-Link",
+            "url": "https://tiendasdaka.com/ve/products/router-ac1200-ec220g5-tp-link",
+        }
+        wrong = {
+            "name": "Router Inalámbrico TP-Link Archer C64 AC1200",
+            "url": "https://venelectronics.com/producto/router-tp-link-archer-c64-ac1200/",
+        }
+        exact = {
+            "name": "Router Inalámbrico TP-Link Archer 5G AC1200",
+            "url": "https://venelectronics.com/producto/router-tp-link-ec220g5-ac1200/",
+        }
+        wrong_score, wrong_method, _ = similarity(daka, wrong)
+        exact_score, exact_method, exact_evidence = similarity(daka, exact)
+        self.assertEqual(wrong_score, 0)
+        self.assertEqual(wrong_method, "model_conflict")
+        self.assertGreaterEqual(exact_score, 0.93)
+        self.assertEqual(exact_method, "model_brand")
+        self.assertIn("EC220G5", exact_evidence["sharedModels"])
 
     def test_network_attributes_are_extracted(self):
         attributes = attribute_signature("Router inalámbrico N 1 Gbps 5 GHz con cuatro antenas y 4 puertos")

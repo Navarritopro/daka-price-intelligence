@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics";
+type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type Product = { id: number; externalId: string; name: string; category?: string | null; url: string; price: number; inStock: boolean | null };
 type HistoryItem = {
   matchId: number; daka: Product; competitor: Product; captureDays: number;

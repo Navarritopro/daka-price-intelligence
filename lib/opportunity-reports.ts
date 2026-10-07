@@ -13,13 +13,14 @@ const SOURCE_COLORS: Record<string, string> = {
   Damasco: "B53112",
   Multimax: "053AED",
   IVOO: "05A94F",
-  Venelectronics: "73A851"
+  Venelectronics: "73A851",
+  SoyTechno: "29B6F6"
 };
 
 const PRIORITY_LABELS: Record<string, string> = {
   critical: "Crítica", high: "Alta", medium: "Media", informative: "Informativa"
 };
-const SOURCE_LABELS: Record<string, string> = { damasco: "Damasco", multimax: "Multimax", ivoo: "IVOO", venelectronics: "Venelectronics" };
+const SOURCE_LABELS: Record<string, string> = { damasco: "Damasco", multimax: "Multimax", ivoo: "IVOO", venelectronics: "Venelectronics", soytechno: "SoyTechno" };
 const TYPE_LABELS: Record<string, string> = { price_risk: "Riesgo de precio", price_advantage: "Ventaja de precio", availability_risk: "Riesgo de disponibilidad", availability_advantage: "Ventaja de disponibilidad", multi_pressure: "Presión multicompetidor", stale_data: "Datos por actualizar" };
 const AVAILABILITY_LABELS: Record<string, string> = { daka_available: "DAKA disponible", daka_unavailable: "DAKA sin disponibilidad", competitor_available: "Competidor disponible", competitor_unavailable: "Competidor sin disponibilidad" };
 

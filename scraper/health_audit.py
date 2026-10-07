@@ -10,7 +10,7 @@ from psycopg.rows import dict_row
 from notifications import notify_failure
 
 
-DEFAULT_SOURCES = "daka,damasco,multimax,ivoo,venelectronics"
+DEFAULT_SOURCES = "daka,damasco,multimax,ivoo,venelectronics,soytechno"
 
 
 def evaluate_sources(rows: list[dict], expected: list[str], max_age_hours: float) -> list[dict]:

@@ -59,12 +59,13 @@ const EMPTY_STATS: ComparisonStats = {
   dakaLower: 0, competitorLower: 0, equalPrice: 0,
   averageGapPct: 0, competitorLastScrapeAt: null
 };
-type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics";
+type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 const COMPETITORS: Record<CompetitorSource, { name: string; short: string }> = {
   damasco: { name: "Damasco", short: "D" },
   multimax: { name: "Multimax", short: "MM" },
   ivoo: { name: "IVOO", short: "IV" },
   venelectronics: { name: "Venelectronics", short: "VE" },
+  soytechno: { name: "SoyTechno", short: "ST" },
 };
 
 function formatDate(value: string | null) {

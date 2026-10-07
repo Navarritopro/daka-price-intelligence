@@ -29,7 +29,7 @@ type ProductHistory = { product: { id: number; externalId: string; name: string;
 const BATCH_SIZE = 50;
 const integer = new Intl.NumberFormat("es-VE");
 const shortDate = new Intl.DateTimeFormat("es-VE", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" });
-const SOURCE_COLORS: Record<string, string> = { daka: "#003288", damasco: "#B53112", multimax: "#053AED", ivoo: "#05A94E", venelectronics: "#73A851" };
+const SOURCE_COLORS: Record<string, string> = { daka: "#003288", damasco: "#B53112", multimax: "#053AED", ivoo: "#05A94E", venelectronics: "#73A851", soytechno: "#29B6F6" };
 const movementLabels: Record<HistoryMovement, string> = {
   up: "↑ Aumentó", down: "↓ Disminuyó", same: "• Sin variación", restocked: "↗ Ingresó stock",
   out: "× Se agotó", unquantified: "Cantidad no determinada"

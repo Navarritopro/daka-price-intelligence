@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JobSummary, MonitoringSourceSummary } from "@/lib/types";
 
-type MonitoringSource = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics";
+type MonitoringSource = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type ScrapeRequest = {
   id: string;
   status: "queued" | "running" | "success" | "failed";
@@ -94,6 +94,13 @@ function sourceSchedule(source: string): SourceSchedule {
     backupMinutes: [11 * 60 + 46, 13 * 60 + 46],
     backupLabels: ["11:46 a. m.", "1:46 p. m."]
   };
+  if (source === "soytechno") return {
+    time: "09:59 a. m. VET",
+    mode: "GitHub Actions · principal + 2 respaldos",
+    primaryMinute: 9 * 60 + 59,
+    backupMinutes: [11 * 60 + 59, 13 * 60 + 59],
+    backupLabels: ["11:59 a. m.", "1:59 p. m."]
+  };
   return { time: "09:00 a. m. VET", mode: "Equipo local · temporal", primaryMinute: 9 * 60, backupMinutes: [], backupLabels: [] };
 }
 
@@ -167,6 +174,7 @@ function sourceName(source: string) {
   if (source === "multimax") return "Multimax";
   if (source === "ivoo") return "IVOO";
   if (source === "venelectronics") return "Venelectronics";
+  if (source === "soytechno") return "SoyTechno";
   return "DAKA";
 }
 
@@ -211,6 +219,7 @@ export default function TechnicalMonitoring({
     : selectedSource === "multimax" ? { pages: 60, products: 2963 }
     : selectedSource === "ivoo" ? { pages: 80, products: 3500 }
     : selectedSource === "venelectronics" ? { pages: 10, products: 500 }
+    : selectedSource === "soytechno" ? { pages: 20, products: 1000 }
     : { pages: 138, products: 2205 };
   const expectedPages = previousSuccess?.pagesScanned ?? expectedDefaults.pages;
   const expectedProducts = previousSuccess?.productsFound ?? selectedSummary?.currentProducts ?? expectedDefaults.products;
@@ -256,6 +265,7 @@ export default function TechnicalMonitoring({
         <button className={selectedSource === "multimax" ? "active" : ""} onClick={() => setSelectedSource("multimax")}>Multimax</button>
         <button className={selectedSource === "ivoo" ? "active" : ""} onClick={() => setSelectedSource("ivoo")}>IVOO</button>
         <button className={selectedSource === "venelectronics" ? "active" : ""} onClick={() => setSelectedSource("venelectronics")}>Venelectronics</button>
+        <button className={selectedSource === "soytechno" ? "active" : ""} onClick={() => setSelectedSource("soytechno")}>SoyTechno</button>
       </nav>
 
       {selectedSource === "all" ? (
@@ -269,7 +279,7 @@ export default function TechnicalMonitoring({
               const capturedChange = latestSuccess && previous ? latestSuccess.productsFound - previous.productsFound : null;
               return (
                 <button key={source.source} className={`source-health-card ${health.level}`} onClick={() => setSelectedSource(source.source)}>
-                  <div className="source-health-head"><div><span className={`monitor-source-badge ${source.source}`}>{source.source === "daka" ? "D" : source.source === "damasco" ? "DM" : source.source === "multimax" ? "MM" : source.source === "ivoo" ? "IV" : "VE"}</span><strong>{source.sourceName}</strong></div><span className={`health-pill ${health.level}`}>{health.label}</span></div>
+                  <div className="source-health-head"><div><span className={`monitor-source-badge ${source.source}`}>{source.source === "daka" ? "D" : source.source === "damasco" ? "DM" : source.source === "multimax" ? "MM" : source.source === "ivoo" ? "IV" : source.source === "venelectronics" ? "VE" : "ST"}</span><strong>{source.sourceName}</strong></div><span className={`health-pill ${health.level}`}>{health.label}</span></div>
                   <div className="source-health-primary"><span>Última captura exitosa</span><b>{formatDate(health.latestSuccess?.finishedAt ?? health.latestSuccess?.startedAt)}</b></div>
                   <div className="source-health-metrics"><div><span>Productos</span><b>{integer.format(source.currentProducts)}</b></div><div><span>Duración</span><b>{formatDuration(health.latestSuccess?.durationSeconds)}</b></div><div><span>Variación catálogo</span><b className={capturedChange != null && capturedChange < 0 ? "metric-warning" : ""}>{capturedChange == null ? "—" : `${capturedChange > 0 ? "+" : ""}${integer.format(capturedChange)}`}</b></div></div>
                   <p>{health.detail}</p>

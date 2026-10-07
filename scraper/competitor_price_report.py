@@ -14,7 +14,7 @@ from notifications import send_telegram
 
 
 VENEZUELA_TZ = ZoneInfo("America/Caracas")
-SOURCES = ("daka", "damasco", "multimax", "ivoo", "venelectronics")
+SOURCES = ("daka", "damasco", "multimax", "ivoo", "venelectronics", "soytechno")
 DEFAULT_APP_BASE_URL = "https://daka-price-intelligence.vercel.app"
 
 

@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
     const requestedSource = request.nextUrl.searchParams.get("source")?.trim() ?? "damasco";
-    const source = ["damasco", "multimax", "ivoo", "venelectronics"].includes(requestedSource) ? requestedSource : "damasco";
+    const source = ["damasco", "multimax", "ivoo", "venelectronics", "soytechno"].includes(requestedSource) ? requestedSource : "damasco";
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const searchLike = `%${search}%`;

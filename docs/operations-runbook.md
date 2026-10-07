@@ -13,6 +13,7 @@ UTC-4).
 | Multimax | GitHub Actions | 09:20 | Respaldos 11:20 y 13:20 |
 | IVOO | GitHub Actions | 09:33 | Respaldos 11:33 y 13:33 |
 | Venelectronics | GitHub Actions | 09:46 | Respaldos 11:46 y 13:46 |
+| SoyTechno | GitHub Actions | 09:59 | Respaldos 11:59 y 13:59 |
 | Homologaciones | GitHub Actions | 10:30 | Ejecución manual de `rematch.yml` |
 | Control operativo | GitHub Actions | 14:30 | Alerta si una captura supera 36 horas |
 | Reporte DAKA y competidores | GitHub Actions | 15:00 | Resumen y Top 10 de cambios frente al día anterior |
@@ -66,11 +67,11 @@ los integrantes del grupo privado.
 3. En GitHub Actions confirmar que **Control operativo diario** termine en verde.
 4. Durante los primeros tres días registrar el resultado de cada fuente:
 
-| Día | Daka | Damasco | Multimax | IVOO | Venelectronics | Control |
-|---|---|---|---|---|---|---|
-| 1 | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente |
-| 2 | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente |
-| 3 | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente |
+| Día | Daka | Damasco | Multimax | IVOO | Venelectronics | SoyTechno | Control |
+|---|---|---|---|---|---|---|---|
+| 1 | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente |
+| 2 | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente |
+| 3 | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente | Pendiente |
 
 ## Alertas
 
