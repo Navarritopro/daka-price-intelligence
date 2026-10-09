@@ -4,6 +4,7 @@ export const ONBOARDING_TOURS = [
   "general",
   "daka",
   "competitors",
+  "catalog_changes",
   "comparison",
   "opportunities",
   "monitoring"

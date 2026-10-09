@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from 
 import type { DashboardData, JobsResponse, JobSummary, MonitoringSourceSummary, ProductSummary } from "@/lib/types";
 import CompetitorComparison from "@/components/competitor-comparison";
 import CommercialOpportunities from "@/components/commercial-opportunities";
+import CatalogChanges from "@/components/catalog-changes";
 import DamascoCatalog from "@/components/damasco-catalog";
 import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
@@ -27,7 +28,7 @@ type CapturePage = {
   changeCount: number;
 };
 type View = "prices" | "operations";
-type PriceTab = "explore" | "changes" | "damasco" | "competitors" | "opportunities";
+type PriceTab = "explore" | "changes" | "damasco" | "catalogChanges" | "competitors" | "opportunities";
 type ChangeProduct = ProductSummary & {
   changeCount: number;
   initialPrice: number | null;
@@ -601,6 +602,8 @@ export default function Dashboard() {
       resetProductScroll();
     } else if (target === "competitors") {
       setPriceTab("damasco");
+    } else if (target === "catalogChanges") {
+      setPriceTab("catalogChanges");
     } else if (target === "comparison") {
       setPriceTab("competitors");
     } else {
@@ -639,7 +642,7 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs" data-tour="intelligence-tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("changes"); }}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("damasco"); }}>Catálogos competencia</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("competitors"); }}>Comparador</button><button className={priceTab === "opportunities" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("opportunities"); }}>Oportunidades comerciales</button></div>
+          <div className="tabs" data-tour="intelligence-tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("changes"); }}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("damasco"); }}>Catálogos competencia</button><button className={priceTab === "catalogChanges" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("catalogChanges"); }}>Cambios de catálogo</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("competitors"); }}>Comparador</button><button className={priceTab === "opportunities" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("opportunities"); }}>Oportunidades comerciales</button></div>
           {priceTab === "explore" ? <>
           {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo por producto</strong><span>Selecciona un producto para consultar todas sus capturas, incluyendo los registros donde el precio no cambió.</span></div><button onClick={openExplorePrices}>Volver al catálogo actual</button></div>}
           <section className="filters" data-tour="catalog-filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>
@@ -675,7 +678,13 @@ export default function Dashboard() {
                   <div className="history-table"><div className="section-head"><div><h2>Historial de cambios de precio</h2><small className="section-explanation">Solo se muestran las capturas donde el precio cambió.</small></div><small>{movementsLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementsLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia USD</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{point.price == null ? "Sin precio" : money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{hasMoreMovements ? <button onClick={() => void loadMoreMovements()} disabled={loadingMoreMovements}>{loadingMoreMovements ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los cambios reales del período" : "No existen cambios con estos filtros"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para visualizar todos sus movimientos.</div>}
               </article>
             </section>
-          </> : priceTab === "damasco" ? <DamascoCatalog reportComparison={reportComparison}/> : priceTab === "competitors" ? <CompetitorComparison canAdmin={currentRole === "admin"}/> : <CommercialOpportunities canAdmin={currentRole === "admin"}/>}
+          </> : priceTab === "damasco"
+            ? <DamascoCatalog reportComparison={reportComparison}/>
+            : priceTab === "catalogChanges"
+              ? <CatalogChanges/>
+              : priceTab === "competitors"
+                ? <CompetitorComparison canAdmin={currentRole === "admin"}/>
+                : <CommercialOpportunities canAdmin={currentRole === "admin"}/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax, IVOO, Venelectronics y SoyTechno</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage">Fase 5 · Venelectronics</span><span>→</span><span className="stage">Fase 6 · SoyTechno</span></div></section>
         </main>
       ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} canAdmin={currentRole === "admin"} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}

@@ -15,6 +15,7 @@ test("mantiene una versión positiva y recorridos únicos", () => {
     "general",
     "daka",
     "competitors",
+    "catalog_changes",
     "comparison",
     "opportunities",
     "monitoring"

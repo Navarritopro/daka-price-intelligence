@@ -11,6 +11,7 @@ import {
 export type OnboardingNavigationTarget =
   | "explore"
   | "competitors"
+  | "catalogChanges"
   | "comparison"
   | "opportunities"
   | "monitoring";
@@ -59,6 +60,13 @@ const HELP_SECTIONS: HelpSection[] = [
     target: "competitors"
   },
   {
+    key: "catalog_changes",
+    title: "Cambios de catálogo",
+    summary: "Audita productos ausentes, nuevos y recuperados entre capturas.",
+    details: ["Comparación de capturas válidas", "Ausencias consecutivas", "Validación del enlace e histórico de presencia"],
+    target: "catalogChanges"
+  },
+  {
     key: "comparison",
     title: "Comparador",
     summary: "Interpreta la posición de DAKA frente a productos equivalentes.",
@@ -85,6 +93,7 @@ const TOUR_TARGET: Record<OnboardingTourKey, OnboardingNavigationTarget> = {
   general: "explore",
   daka: "explore",
   competitors: "competitors",
+  catalog_changes: "catalogChanges",
   comparison: "comparison",
   opportunities: "opportunities",
   monitoring: "monitoring"
@@ -114,6 +123,11 @@ function tourSteps(tour: OnboardingTourKey, role: Role): DriveStep[] {
       { element: '[data-tour="competitor-subtabs"]', popover: { title: "Vistas del competidor", description: "Alterna entre catálogo, cambios de precios, histórico por producto y cambios de disponibilidad." } },
       { element: '[data-tour="competitor-filters"]', popover: { title: "Filtros del catálogo", description: "Filtra por marca, categoría, vigencia, stock y variación sin perder el histórico almacenado." } },
       { element: '[data-tour="competitor-content"]', popover: { title: "Producto e histórico", description: "La lista identifica la fuente, mientras el detalle muestra precio publicado, disponibilidad, unidades y capturas." } }
+    ],
+    catalog_changes: [
+      { element: '[data-tour="catalog-changes-head"]', popover: { title: "Auditoría de presencia", description: "Compara capturas válidas de DAKA y sus competidores para encontrar productos ausentes, nuevos o recuperados." } },
+      { element: '[data-tour="catalog-changes-filters"]', popover: { title: "Periodo y segmentación", description: "Compara ayer y hoy, las dos últimas capturas o fechas personalizadas; luego filtra por fuente, estado, marca y categoría." } },
+      { element: '[data-tour="catalog-changes-table"]', popover: { title: "Validación producto a producto", description: "Abre el enlace original y consulta el historial. Una ausencia se confirma después de dos capturas consecutivas." } }
     ],
     comparison: [
       { element: '[data-tour="comparison-source-tabs"]', popover: { title: "Competidor analizado", description: "Selecciona la empresa contra la cual quieres evaluar la posición de DAKA." } },
