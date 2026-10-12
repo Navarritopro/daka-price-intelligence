@@ -51,7 +51,7 @@ async function publishMaster(rows: MasterRow[], filename: string, checksum: stri
       await tx`
         INSERT INTO daka_sku_master (sku, line, family, brand, description, master_present, active, source_batch_id, updated_at)
         SELECT x.sku, x.line, x.family, x.brand, x.description, TRUE, x.active, ${batchId}::uuid, NOW()
-        FROM jsonb_to_recordset(${JSON.stringify(masterPayload)}::jsonb)
+        FROM jsonb_to_recordset(${tx.json(masterPayload)}::jsonb)
           AS x(sku text, line text, family text, brand text, description text, active boolean)
         ON CONFLICT (sku) DO UPDATE SET line = EXCLUDED.line, family = EXCLUDED.family,
           brand = EXCLUDED.brand, description = EXCLUDED.description, master_present = TRUE,
@@ -68,7 +68,7 @@ async function publishMaster(rows: MasterRow[], filename: string, checksum: stri
           (sku, period_month, card_raw, company_abc, line_abc, family_abc, gmroi, xyz, rotation, coverage, affectation, gmroi_warning, source_batch_id)
         SELECT x.sku, ${DAKA_CARD_PERIOD}::date, x.raw, x.company, x.line, x.family, x.gmroi,
           x.xyz, x.rotation, x.coverage, x.affectation, x.warning, ${batchId}::uuid
-        FROM jsonb_to_recordset(${JSON.stringify(cardPayload)}::jsonb)
+        FROM jsonb_to_recordset(${tx.json(cardPayload)}::jsonb)
           AS x(sku text, raw text, company text, line text, family text, gmroi numeric, xyz text, rotation text, coverage text, affectation text, warning boolean)
         ON CONFLICT (sku, period_month) DO UPDATE SET card_raw = EXCLUDED.card_raw,
           company_abc = EXCLUDED.company_abc, line_abc = EXCLUDED.line_abc, family_abc = EXCLUDED.family_abc,
@@ -103,7 +103,7 @@ async function publishInventory(rows: InventoryRow[], filename: string, checksum
       await tx`
         INSERT INTO daka_sku_master (sku, line, family, subfamily, brand, description, master_present, active, source_batch_id)
         SELECT x.sku, x.line, x.family, x.subfamily, x.brand, x.description, FALSE, TRUE, ${batchId}::uuid
-        FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
+        FROM jsonb_to_recordset(${tx.json(payload)}::jsonb)
           AS x(sku text, line text, family text, subfamily text, brand text, description text)
         ON CONFLICT (sku) DO UPDATE SET subfamily = COALESCE(EXCLUDED.subfamily, daka_sku_master.subfamily), updated_at = NOW()
       `;
@@ -114,7 +114,7 @@ async function publishInventory(rows: InventoryRow[], filename: string, checksum
       const payload = part.map((name) => ({ name, type: name.toUpperCase() === "CDD" ? "cdd" : "store" }));
       await tx`
         INSERT INTO daka_locations (name, location_type)
-        SELECT x.name, x.type FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) AS x(name text, type text)
+        SELECT x.name, x.type FROM jsonb_to_recordset(${tx.json(payload)}::jsonb) AS x(name text, type text)
         ON CONFLICT (name) DO UPDATE SET location_type = EXCLUDED.location_type, active = TRUE
       `;
     }
@@ -123,7 +123,7 @@ async function publishInventory(rows: InventoryRow[], filename: string, checksum
       await tx`
         INSERT INTO daka_inventory_by_location (snapshot_id, sku, location_id, quantity_raw)
         SELECT ${snapshotId}::uuid, x.sku, l.id, x.quantity
-        FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) AS x(sku text, location text, quantity numeric)
+        FROM jsonb_to_recordset(${tx.json(payload)}::jsonb) AS x(sku text, location text, quantity numeric)
         JOIN daka_locations l ON l.name = x.location
       `;
     }
