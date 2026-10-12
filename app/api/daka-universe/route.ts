@@ -16,6 +16,10 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(Math.max(Number(params.get("limit")) || 50, 1), 200);
     const offset = Math.max(Number(params.get("offset")) || 0, 0);
     const searchLike = `%${search}%`;
+    const lineLike = `%${line}%`;
+    const familyLike = `%${family}%`;
+    const subfamilyLike = `%${subfamily}%`;
+    const brandLike = `%${brand}%`;
     const sql = getSql();
     const rows = await sql`
       WITH latest_snapshot AS (
@@ -48,10 +52,10 @@ export async function GET(request: NextRequest) {
       ), filtered AS (
         SELECT * FROM universe
         WHERE (${search} = '' OR sku ILIKE ${searchLike} OR description ILIKE ${searchLike})
-          AND (${line} = '' OR line = ${line})
-          AND (${family} = '' OR family = ${family})
-          AND (${subfamily} = '' OR subfamily = ${subfamily})
-          AND (${brand} = '' OR brand = ${brand})
+          AND (${line} = '' OR line ILIKE ${lineLike})
+          AND (${family} = '' OR family ILIKE ${familyLike})
+          AND (${subfamily} = '' OR subfamily ILIKE ${subfamilyLike})
+          AND (${brand} = '' OR brand ILIKE ${brandLike})
           AND (${status} = 'all'
             OR (${status} = 'active' AND active = TRUE AND master_present = TRUE)
             OR (${status} = 'inactive' AND active = FALSE)
