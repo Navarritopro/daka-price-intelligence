@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const family = params.get("family")?.trim() ?? "";
     const subfamily = params.get("subfamily")?.trim() ?? "";
     const brand = params.get("brand")?.trim() ?? "";
+    const card = params.get("card")?.trim() ?? "";
     const status = ["all", "active", "inactive", "pending_card"].includes(params.get("status") ?? "") ? params.get("status")! : "all";
     const inventory = ["all", "available", "zero", "negative", "absent"].includes(params.get("inventory") ?? "") ? params.get("inventory")! : "all";
     const limit = Math.min(Math.max(Number(params.get("limit")) || 50, 1), 200);
@@ -20,10 +21,16 @@ export async function GET(request: NextRequest) {
     const familyLike = `%${family}%`;
     const subfamilyLike = `%${subfamily}%`;
     const brandLike = `%${brand}%`;
+    const cardLike = `%${card}%`;
     const sql = getSql();
     const rows = await sql`
       WITH latest_snapshot AS (
         SELECT id, effective_date FROM daka_inventory_snapshots ORDER BY effective_date DESC, created_at DESC LIMIT 1
+      ), latest_price_snapshot AS (
+        SELECT id, effective_date FROM daka_price_snapshots WHERE is_active = TRUE ORDER BY effective_date DESC, created_at DESC LIMIT 1
+      ), latest_daka_job AS (
+        SELECT j.id FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
+        WHERE s.slug = 'daka' AND j.status = 'success' ORDER BY j.started_at DESC LIMIT 1
       ), inventory_totals AS (
         SELECT i.sku, SUM(i.quantity_raw)::numeric AS total_raw,
           SUM(i.quantity_raw) FILTER (WHERE l.location_type = 'cdd')::numeric AS cdd_raw,
@@ -40,7 +47,10 @@ export async function GET(request: NextRequest) {
           c.xyz, c.rotation, c.coverage, c.affectation, c.gmroi_warning,
           it.total_raw, it.cdd_raw, it.stores_raw, (it.sku IS NOT NULL) AS has_inventory,
           ls.effective_date,
-          p.id AS web_product_id, p.url AS web_url
+          p.id AS web_product_id, p.url AS web_url, p.active AS web_active,
+          web_price.price_usd AS web_price, web_price.in_stock AS web_in_stock,
+          list_price.price_usd AS list_price, list_price.review_warning AS list_price_warning,
+          lps.effective_date AS list_price_date
         FROM daka_sku_master m
         LEFT JOIN LATERAL (
           SELECT * FROM daka_sku_card_history c0 WHERE c0.sku = m.sku ORDER BY c0.period_month DESC LIMIT 1
@@ -49,6 +59,9 @@ export async function GET(request: NextRequest) {
         LEFT JOIN latest_snapshot ls ON TRUE
         LEFT JOIN sources src ON src.slug = 'daka'
         LEFT JOIN products p ON p.source_id = src.id AND p.external_id = m.sku
+        LEFT JOIN price_history web_price ON web_price.product_id = p.id AND web_price.job_id = (SELECT id FROM latest_daka_job)
+        LEFT JOIN latest_price_snapshot lps ON TRUE
+        LEFT JOIN daka_price_items list_price ON list_price.snapshot_id = lps.id AND list_price.sku = m.sku
       ), filtered AS (
         SELECT * FROM universe
         WHERE (${search} = '' OR sku ILIKE ${searchLike} OR description ILIKE ${searchLike})
@@ -56,6 +69,7 @@ export async function GET(request: NextRequest) {
           AND (${family} = '' OR family ILIKE ${familyLike})
           AND (${subfamily} = '' OR subfamily ILIKE ${subfamilyLike})
           AND (${brand} = '' OR brand ILIKE ${brandLike})
+          AND (${card} = '' OR COALESCE(card_raw, '') ILIKE ${cardLike})
           AND (${status} = 'all'
             OR (${status} = 'active' AND active = TRUE AND master_present = TRUE)
             OR (${status} = 'inactive' AND active = FALSE)
@@ -80,8 +94,16 @@ export async function GET(request: NextRequest) {
         COUNT(*) FILTER (WHERE NOT m.active)::int AS inactive,
         COUNT(*) FILTER (WHERE t.total > 0)::int AS available,
         COUNT(*) FILTER (WHERE t.sku IS NULL)::int AS absent_inventory,
-        COALESCE(SUM(GREATEST(t.total, 0)), 0)::numeric AS available_units
+        COALESCE(SUM(GREATEST(t.total, 0)), 0)::numeric AS available_units,
+        COUNT(*) FILTER (WHERE lp.price_usd IS NOT NULL)::int AS with_list_price,
+        COUNT(*) FILTER (WHERE wp.id IS NOT NULL)::int AS published_web
       FROM daka_sku_master m LEFT JOIN totals t ON t.sku = m.sku
+      LEFT JOIN LATERAL (
+        SELECT pi.price_usd FROM daka_price_items pi JOIN daka_price_snapshots ps ON ps.id = pi.snapshot_id
+        WHERE pi.sku = m.sku AND ps.is_active ORDER BY ps.effective_date DESC, ps.created_at DESC LIMIT 1
+      ) lp ON TRUE
+      LEFT JOIN sources ds ON ds.slug = 'daka'
+      LEFT JOIN products wp ON wp.source_id = ds.id AND wp.external_id = m.sku
     `;
     const filters = await sql`
       SELECT
@@ -105,14 +127,25 @@ export async function GET(request: NextRequest) {
           totalAvailable: row.total_raw == null ? null : Math.max(asNumber(row.total_raw), 0),
           cddRaw: row.cdd_raw == null ? null : asNumber(row.cdd_raw), storesRaw: row.stores_raw == null ? null : asNumber(row.stores_raw)
         },
-        webProductId: row.web_product_id == null ? null : Number(row.web_product_id), webUrl: row.web_url
+        webProductId: row.web_product_id == null ? null : Number(row.web_product_id), webUrl: row.web_url,
+        webAvailable: row.web_product_id != null && row.web_active !== false,
+        price: {
+          amount: row.web_price != null ? asNumber(row.web_price) : row.list_price != null ? asNumber(row.list_price) : null,
+          source: row.web_price != null ? "web" : row.list_price != null ? "list" : null,
+          webPrice: row.web_price == null ? null : asNumber(row.web_price),
+          webInStock: row.web_in_stock ?? null,
+          listPrice: row.list_price == null ? null : asNumber(row.list_price),
+          listEffectiveDate: row.list_price_date ?? null,
+          warning: Boolean(row.list_price_warning)
+        }
       })),
       total: rows.length ? Number(rows[0].total) : 0, offset, limit,
       hasMore: offset + rows.length < (rows.length ? Number(rows[0].total) : 0),
       stats: {
         total: Number(stats?.total ?? 0), masterCount: Number(stats?.master_count ?? 0), pendingCard: Number(stats?.pending_card ?? 0),
         inactive: Number(stats?.inactive ?? 0), available: Number(stats?.available ?? 0), absentInventory: Number(stats?.absent_inventory ?? 0),
-        availableUnits: asNumber(stats?.available_units)
+        availableUnits: asNumber(stats?.available_units), withListPrice: Number(stats?.with_list_price ?? 0),
+        publishedWeb: Number(stats?.published_web ?? 0)
       },
       filters: filters[0] ?? { lines: [], families: [], subfamilies: [], brands: [] }
     });

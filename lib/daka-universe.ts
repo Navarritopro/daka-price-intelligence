@@ -38,8 +38,15 @@ export type InventoryRow = {
   rowNumber: number;
 };
 
+export type PriceListRow = {
+  sku: string;
+  description: string;
+  price: number;
+  rowNumber: number;
+};
+
 export type ImportPreview = {
-  kind: "master" | "inventory";
+  kind: "master" | "inventory" | "price_list";
   filename: string;
   rowCount: number;
   uniqueSkus: number;
@@ -171,6 +178,54 @@ export async function parseInventoryWorkbook(buffer: Buffer): Promise<InventoryR
   return rows;
 }
 
+function parsePriceValue(value: unknown) {
+  if (typeof value === "number") return value;
+  const raw = text(value).replace(/\s/g, "");
+  if (!raw) return Number.NaN;
+  const normalized = raw.includes(",") && raw.includes(".")
+    ? raw.lastIndexOf(",") > raw.lastIndexOf(".")
+      ? raw.replace(/\./g, "").replace(",", ".")
+      : raw.replace(/,/g, "")
+    : raw.replace(",", ".");
+  return Number(normalized.replace(/[^0-9.-]/g, ""));
+}
+
+export async function parsePriceListWorkbook(buffer: Buffer): Promise<PriceListRow[]> {
+  const sheet = await workbookFrom(buffer);
+  const headers = headerMap(sheet);
+  const columns = {
+    sku: requiredColumn(headers, ["Número de artículo", "Numero de articulo", "SKU"]),
+    description: requiredColumn(headers, ["Descripción del artículo", "Descripcion del articulo", "Descripcion"]),
+    price: requiredColumn(headers, ["Precio", "Precio USD"])
+  };
+  const rows: PriceListRow[] = [];
+  const seen = new Map<string, number>();
+  const errors: string[] = [];
+  sheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const sku = text(row.getCell(columns.sku).value).toUpperCase();
+    if (!sku) return;
+    try {
+      const description = text(row.getCell(columns.description).value);
+      const price = parsePriceValue(row.getCell(columns.price).value);
+      if (!description) throw new Error("Descripción vacía");
+      if (!Number.isFinite(price) || price <= 0) throw new Error("Precio vacío, inválido o menor o igual a cero");
+      const previous = seen.get(sku);
+      if (previous != null) {
+        if (previous !== price) throw new Error(`SKU duplicado con precios diferentes: ${sku}`);
+        throw new Error(`SKU duplicado: ${sku}`);
+      }
+      seen.set(sku, price);
+      rows.push({ sku, description, price, rowNumber });
+    } catch (error) {
+      errors.push(`Fila ${rowNumber}: ${error instanceof Error ? error.message : "error desconocido"}`);
+    }
+  });
+  if (errors.length) throw new Error(errors.slice(0, 12).join("\n") + (errors.length > 12 ? `\n…y ${errors.length - 12} errores más` : ""));
+  if (!rows.length) throw new Error("La lista no contiene precios válidos");
+  return rows;
+}
+
 export function previewMaster(rows: MasterRow[], filename: string): ImportPreview {
   const warnings = rows.filter((row) => row.card.warning).length;
   const newProducts = rows.filter((row) => row.card.raw.includes("N")).length;
@@ -193,6 +248,24 @@ export function previewInventory(rows: InventoryRow[], filename: string): Import
     warnings: negativeRows ? [`${negativeRows.toLocaleString("es-VE")} registros negativos se conservarán y se tratarán como 0 únicamente para disponibilidad comercial.`] : [],
     stats: { locations: new Set(rows.map((row) => row.location)).size, negativeRows, zeroRows },
     sample: rows.slice(0, 5).map((row) => ({ sku: row.sku, description: row.description, location: row.location, quantity: row.quantity }))
+  };
+}
+
+export function previewPriceList(rows: PriceListRow[], filename: string): ImportPreview {
+  const lowPrices = rows.filter((row) => row.price < 1).length;
+  const highPrices = rows.filter((row) => row.price >= 10_000).length;
+  const warnings: string[] = [];
+  if (lowPrices) warnings.push(`${lowPrices.toLocaleString("es-VE")} precios son inferiores a USD 1; se conservarán con advertencia para revisión.`);
+  if (highPrices) warnings.push(`${highPrices.toLocaleString("es-VE")} precios son iguales o superiores a USD 10.000; se conservarán con advertencia.`);
+  return {
+    kind: "price_list", filename, rowCount: rows.length, uniqueSkus: new Set(rows.map((row) => row.sku)).size,
+    warnings,
+    stats: {
+      lowPrices, highPrices,
+      minimumPrice: Math.min(...rows.map((row) => row.price)),
+      maximumPrice: Math.max(...rows.map((row) => row.price))
+    },
+    sample: rows.slice(0, 5).map((row) => ({ sku: row.sku, description: row.description, price: row.price }))
   };
 }
 

@@ -7,10 +7,13 @@ import {
   DAKA_INVENTORY_EFFECTIVE_DATE,
   parseInventoryWorkbook,
   parseMasterWorkbook,
+  parsePriceListWorkbook,
   previewInventory,
   previewMaster,
+  previewPriceList,
   type InventoryRow,
-  type MasterRow
+  type MasterRow,
+  type PriceListRow
 } from "@/lib/daka-universe";
 
 export const dynamic = "force-dynamic";
@@ -26,11 +29,41 @@ async function readUpload(request: NextRequest) {
   let filename = encodedFilename;
   try { filename = decodeURIComponent(encodedFilename); } catch { /* conserva el nombre recibido */ }
   if (!filename.toLowerCase().endsWith(".xlsx")) throw new Error("Selecciona un archivo Excel .xlsx");
-  if (kind !== "master" && kind !== "inventory") throw new Error("Tipo de archivo no reconocido");
+  if (kind !== "master" && kind !== "inventory" && kind !== "price_list") throw new Error("Tipo de archivo no reconocido");
   if (mode !== "preview" && mode !== "publish") throw new Error("Modo de importación no reconocido");
   const buffer = Buffer.from(await request.arrayBuffer());
   if (!buffer.length || buffer.length > 4_000_000) throw new Error("El archivo debe pesar menos de 4 MB");
-  return { filename, kind, mode, buffer, checksum: createHash("sha256").update(buffer).digest("hex") } as const;
+  const effectiveDate = request.headers.get("x-effective-date")?.trim() ?? "";
+  if (kind === "price_list" && !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+    throw new Error("Indica una fecha efectiva válida para la lista de precios");
+  }
+  return { filename, kind, mode, effectiveDate, buffer, checksum: createHash("sha256").update(buffer).digest("hex") } as const;
+}
+
+async function enrichPricePreview(preview: ReturnType<typeof previewPriceList>, rows: PriceListRow[]) {
+  const sql = getSql();
+  const skus = rows.map((row) => row.sku);
+  const [coverage] = await sql`
+    WITH incoming AS (
+      SELECT jsonb_array_elements_text(${sql.json(skus)}::jsonb) AS sku
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE m.sku IS NOT NULL)::int AS matched_universe,
+      COUNT(*) FILTER (WHERE m.master_present)::int AS matched_master,
+      COUNT(*) FILTER (WHERE m.sku IS NULL)::int AS price_only,
+      (SELECT COUNT(*) FROM daka_sku_master dm WHERE NOT EXISTS (SELECT 1 FROM incoming i WHERE i.sku = dm.sku))::int AS universe_without_price
+    FROM incoming i LEFT JOIN daka_sku_master m ON m.sku = i.sku
+  `;
+  preview.stats = {
+    ...preview.stats,
+    matchedUniverse: Number(coverage?.matched_universe ?? 0),
+    matchedMaster: Number(coverage?.matched_master ?? 0),
+    priceOnly: Number(coverage?.price_only ?? 0),
+    universeWithoutPrice: Number(coverage?.universe_without_price ?? 0)
+  };
+  if (preview.stats.priceOnly) preview.warnings.push(`${preview.stats.priceOnly.toLocaleString("es-VE")} SKU aparecen solo en la lista de precios; se conservarán para auditoría sin agregarlos automáticamente al universo.`);
+  if (preview.stats.universeWithoutPrice) preview.warnings.push(`${preview.stats.universeWithoutPrice.toLocaleString("es-VE")} SKU del universo no tienen precio en este archivo.`);
+  return preview;
 }
 
 async function publishMaster(rows: MasterRow[], filename: string, checksum: string, user: { id: string; email: string }) {
@@ -131,19 +164,74 @@ async function publishInventory(rows: InventoryRow[], filename: string, checksum
   return batchId;
 }
 
+async function publishPriceList(rows: PriceListRow[], filename: string, checksum: string, effectiveDate: string, user: { id: string; email: string }) {
+  const sql = getSql();
+  const batchId = randomUUID();
+  const snapshotId = randomUUID();
+  const warningCount = rows.filter((row) => row.price < 1 || row.price >= 10_000).length;
+  await sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`daka-price:${effectiveDate}:base-otras`}))`;
+    const [versionRow] = await tx`
+      SELECT COALESCE(MAX(version), 0)::int + 1 AS next_version
+      FROM daka_price_snapshots
+      WHERE effective_date = ${effectiveDate}::date AND list_name = 'base otras'
+    `;
+    const version = Number(versionRow?.next_version ?? 1);
+    await tx`
+      INSERT INTO daka_import_batches
+        (id, file_type, filename, checksum_sha256, effective_date, row_count, unique_skus, warning_count, imported_by, imported_by_email)
+      VALUES (${batchId}, 'price_list', ${filename}, ${checksum}, ${effectiveDate}::date,
+        ${rows.length}, ${rows.length}, ${warningCount}, ${user.id}::uuid, ${user.email})
+    `;
+    await tx`
+      INSERT INTO daka_price_snapshots
+        (id, effective_date, currency, list_name, version, is_active, source_batch_id)
+      VALUES (${snapshotId}, ${effectiveDate}::date, 'USD', 'base otras', ${version}, FALSE, ${batchId}::uuid)
+    `;
+    for (const part of chunks(rows)) {
+      const payload = part.map((row) => ({
+        sku: row.sku, description: row.description, price: row.price,
+        warning: row.price < 1 || row.price >= 10_000
+      }));
+      await tx`
+        INSERT INTO daka_price_items (snapshot_id, sku, source_description, price_usd, review_warning)
+        SELECT ${snapshotId}::uuid, x.sku, x.description, x.price, x.warning
+        FROM jsonb_to_recordset(${tx.json(payload)}::jsonb)
+          AS x(sku text, description text, price numeric, warning boolean)
+      `;
+    }
+    const previous = await tx`
+      UPDATE daka_price_snapshots SET is_active = FALSE, replaced_by = ${snapshotId}::uuid
+      WHERE effective_date = ${effectiveDate}::date AND list_name = 'base otras' AND is_active = TRUE
+      RETURNING id
+    `;
+    await tx`UPDATE daka_price_snapshots SET is_active = TRUE WHERE id = ${snapshotId}::uuid`;
+    return previous;
+  });
+  return batchId;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getRequestUser(request);
     if (user?.role !== "admin") return NextResponse.json({ error: "Acceso administrativo requerido" }, { status: 403 });
     const upload = await readUpload(request);
-    const rows = upload.kind === "master" ? await parseMasterWorkbook(upload.buffer) : await parseInventoryWorkbook(upload.buffer);
+    const rows = upload.kind === "master"
+      ? await parseMasterWorkbook(upload.buffer)
+      : upload.kind === "inventory"
+        ? await parseInventoryWorkbook(upload.buffer)
+        : await parsePriceListWorkbook(upload.buffer);
     const preview = upload.kind === "master"
       ? previewMaster(rows as MasterRow[], upload.filename)
-      : previewInventory(rows as InventoryRow[], upload.filename);
+      : upload.kind === "inventory"
+        ? previewInventory(rows as InventoryRow[], upload.filename)
+        : await enrichPricePreview(previewPriceList(rows as PriceListRow[], upload.filename), rows as PriceListRow[]);
     if (upload.mode === "preview") return NextResponse.json({ preview });
     const batchId = upload.kind === "master"
       ? await publishMaster(rows as MasterRow[], upload.filename, upload.checksum, user)
-      : await publishInventory(rows as InventoryRow[], upload.filename, upload.checksum, user);
+      : upload.kind === "inventory"
+        ? await publishInventory(rows as InventoryRow[], upload.filename, upload.checksum, user)
+        : await publishPriceList(rows as PriceListRow[], upload.filename, upload.checksum, upload.effectiveDate, user);
     return NextResponse.json({ preview, batchId, published: true });
   } catch (error) {
     console.error("Daka universe import failed", error);

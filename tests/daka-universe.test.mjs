@@ -7,8 +7,10 @@ import {
   parseDakaCard,
   parseInventoryWorkbook,
   parseMasterWorkbook,
+  parsePriceListWorkbook,
   previewInventory,
   previewMaster,
+  previewPriceList,
   splitInventoryArticle
 } from "../lib/daka-universe.ts";
 
@@ -18,6 +20,34 @@ test("decodifica la cédula sin modificar el valor original", () => {
   assert.deepEqual([card.companyAbc, card.lineAbc, card.familyAbc], ["A", "A", "A"]);
   assert.equal(card.gmroi, 12.94);
   assert.deepEqual([card.xyz, card.rotation, card.coverage, card.affectation], ["Y", "L", "D", "P"]);
+});
+
+test("valida la lista diaria de precios y conserva valores extremos como advertencias", async () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("base otras");
+  sheet.addRow(["Número de artículo", "Descripción del artículo", "Precio"]);
+  sheet.addRow(["LB-1", "ACCESORIO", 0.01]);
+  sheet.addRow(["LB-2", "EQUIPO ESPECIAL", 24499.99]);
+  const rows = await parsePriceListWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()));
+  const preview = previewPriceList(rows, "precios.xlsx");
+  assert.equal(preview.uniqueSkus, 2);
+  assert.equal(preview.stats.lowPrices, 1);
+  assert.equal(preview.stats.highPrices, 1);
+  assert.equal(preview.warnings.length, 2);
+});
+
+test("rechaza SKU duplicados o precios no positivos en la lista diaria", async () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("base otras");
+  sheet.addRow(["Número de artículo", "Descripción del artículo", "Precio"]);
+  sheet.addRow(["LB-1", "PRODUCTO", 100]);
+  sheet.addRow(["LB-1", "PRODUCTO", 90]);
+  sheet.addRow(["LB-2", "PRODUCTO DOS", 0]);
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  await assert.rejects(
+    () => parsePriceListWorkbook(buffer),
+    /SKU duplicado con precios diferentes|Precio vacío/
+  );
 });
 
 test("preserva GMROI negativo y marca valores atípicos", () => {
