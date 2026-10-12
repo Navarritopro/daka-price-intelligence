@@ -132,9 +132,9 @@ async function publishInventory(rows: InventoryRow[], filename: string, checksum
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getRequestUser(request);
-  if (user?.role !== "admin") return NextResponse.json({ error: "Acceso administrativo requerido" }, { status: 403 });
   try {
+    const user = await getRequestUser(request);
+    if (user?.role !== "admin") return NextResponse.json({ error: "Acceso administrativo requerido" }, { status: 403 });
     const upload = await readUpload(request);
     const rows = upload.kind === "master" ? await parseMasterWorkbook(upload.buffer) : await parseInventoryWorkbook(upload.buffer);
     const preview = upload.kind === "master"
@@ -149,6 +149,12 @@ export async function POST(request: NextRequest) {
     console.error("Daka universe import failed", error);
     const message = error instanceof Error ? error.message : "No fue posible procesar el archivo";
     const duplicate = message.includes("duplicate key") || message.includes("daka_import_batches_file_type_checksum");
-    return NextResponse.json({ error: duplicate ? "Este archivo ya fue publicado anteriormente; no se duplicaron datos." : message }, { status: duplicate ? 409 : 400 });
+    const connectionFailure = /connect|connection|ECONN|timeout|remaining connection slots|too many clients/i.test(message);
+    const errorMessage = duplicate
+      ? "Este archivo ya fue publicado anteriormente; no se duplicaron datos."
+      : connectionFailure
+        ? "PostgreSQL no tiene conexiones disponibles. Espera el nuevo despliegue de Vercel y vuelve a intentarlo."
+        : message;
+    return NextResponse.json({ error: errorMessage }, { status: duplicate ? 409 : connectionFailure ? 503 : 400 });
   }
 }
