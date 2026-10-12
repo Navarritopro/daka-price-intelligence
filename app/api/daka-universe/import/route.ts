@@ -20,16 +20,17 @@ const CHUNK_SIZE = 750;
 const chunks = <T,>(items: T[]) => Array.from({ length: Math.ceil(items.length / CHUNK_SIZE) }, (_, index) => items.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE));
 
 async function readUpload(request: NextRequest) {
-  const form = await request.formData();
-  const file = form.get("file");
-  const kind = String(form.get("kind") ?? "");
-  const mode = String(form.get("mode") ?? "preview");
-  if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".xlsx")) throw new Error("Selecciona un archivo Excel .xlsx");
+  const kind = request.headers.get("x-import-kind") ?? "";
+  const mode = request.headers.get("x-import-mode") ?? "preview";
+  const encodedFilename = request.headers.get("x-file-name") ?? "";
+  let filename = encodedFilename;
+  try { filename = decodeURIComponent(encodedFilename); } catch { /* conserva el nombre recibido */ }
+  if (!filename.toLowerCase().endsWith(".xlsx")) throw new Error("Selecciona un archivo Excel .xlsx");
   if (kind !== "master" && kind !== "inventory") throw new Error("Tipo de archivo no reconocido");
   if (mode !== "preview" && mode !== "publish") throw new Error("Modo de importación no reconocido");
-  const buffer = Buffer.from(await file.arrayBuffer());
+  const buffer = Buffer.from(await request.arrayBuffer());
   if (!buffer.length || buffer.length > 4_000_000) throw new Error("El archivo debe pesar menos de 4 MB");
-  return { file, kind, mode, buffer, checksum: createHash("sha256").update(buffer).digest("hex") } as const;
+  return { filename, kind, mode, buffer, checksum: createHash("sha256").update(buffer).digest("hex") } as const;
 }
 
 async function publishMaster(rows: MasterRow[], filename: string, checksum: string, user: { id: string; email: string }) {
@@ -137,12 +138,12 @@ export async function POST(request: NextRequest) {
     const upload = await readUpload(request);
     const rows = upload.kind === "master" ? await parseMasterWorkbook(upload.buffer) : await parseInventoryWorkbook(upload.buffer);
     const preview = upload.kind === "master"
-      ? previewMaster(rows as MasterRow[], upload.file.name)
-      : previewInventory(rows as InventoryRow[], upload.file.name);
+      ? previewMaster(rows as MasterRow[], upload.filename)
+      : previewInventory(rows as InventoryRow[], upload.filename);
     if (upload.mode === "preview") return NextResponse.json({ preview });
     const batchId = upload.kind === "master"
-      ? await publishMaster(rows as MasterRow[], upload.file.name, upload.checksum, user)
-      : await publishInventory(rows as InventoryRow[], upload.file.name, upload.checksum, user);
+      ? await publishMaster(rows as MasterRow[], upload.filename, upload.checksum, user)
+      : await publishInventory(rows as InventoryRow[], upload.filename, upload.checksum, user);
     return NextResponse.json({ preview, batchId, published: true });
   } catch (error) {
     console.error("Daka universe import failed", error);

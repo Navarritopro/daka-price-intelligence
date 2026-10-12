@@ -104,9 +104,23 @@ export default function DakaProductUniverse({ canAdmin }: { canAdmin: boolean })
     if (!file) { setImportNotice("Selecciona el archivo Excel correspondiente."); return; }
     setImportBusy(true); setImportNotice(null);
     try {
-      const form = new FormData(); form.set("file", file); form.set("kind", importKind); form.set("mode", mode);
-      const response = await fetch("/api/daka-universe/import", { method: "POST", body: form });
-      const payload = await response.json() as { preview?: Preview; error?: string; published?: boolean };
+      const response = await fetch("/api/daka-universe/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "x-import-kind": importKind,
+          "x-import-mode": mode,
+          "x-file-name": encodeURIComponent(file.name)
+        },
+        body: file
+      });
+      const rawResponse = await response.text();
+      let payload: { preview?: Preview; error?: string; published?: boolean } = {};
+      if (rawResponse) {
+        try { payload = JSON.parse(rawResponse) as typeof payload; }
+        catch { throw new Error(`El servidor respondió en un formato no válido (HTTP ${response.status}).`); }
+      }
+      if (!rawResponse) throw new Error(`El servidor no devolvió respuesta (HTTP ${response.status}). Revisa los registros del despliegue en Vercel.`);
       if (!response.ok) throw new Error(payload.error ?? "No fue posible procesar el archivo");
       setPreview(payload.preview ?? null);
       if (payload.published) { setImportNotice("Archivo publicado correctamente. El módulo ya utiliza esta versión."); setFile(null); await load(); }
