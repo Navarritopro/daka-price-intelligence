@@ -9,6 +9,7 @@ import DamascoCatalog from "@/components/damasco-catalog";
 import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
 import OnboardingCenter, { type OnboardingNavigationTarget } from "@/components/onboarding-center";
+import DakaProductUniverse from "@/components/daka-product-universe";
 
 type PricePoint = {
   price: number | null;
@@ -27,7 +28,7 @@ type CapturePage = {
   maxPrice: number | null;
   changeCount: number;
 };
-type View = "prices" | "operations";
+type View = "prices" | "universe" | "operations";
 type PriceTab = "explore" | "changes" | "damasco" | "catalogChanges" | "competitors" | "opportunities";
 type ChangeProduct = ProductSummary & {
   changeCount: number;
@@ -595,6 +596,10 @@ export default function Dashboard() {
       setView("operations");
       return;
     }
+    if (target === "universe") {
+      setView("universe");
+      return;
+    }
     setView("prices");
     if (target === "explore") {
       setPriceTab("explore");
@@ -618,6 +623,7 @@ export default function Dashboard() {
         <div className="brand">DAKA <span>PRICE LAB</span></div>
         <nav className="module-nav" aria-label="Módulos principales" data-tour="module-nav">
           <button className={view === "prices" ? "module-button active" : "module-button"} onClick={() => setView("prices")}>Inteligencia de precios</button>
+          <button className={view === "universe" ? "module-button active" : "module-button"} onClick={() => setView("universe")}>Universo de Productos Daka</button>
           <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => setView("operations")}>Monitoreo técnico</button>
         </nav>
         <div className="header-actions">
@@ -687,7 +693,8 @@ export default function Dashboard() {
                 : <CommercialOpportunities canAdmin={currentRole === "admin"}/>}
           <section className="roadmap"><div><strong>Benchmarking competitivo habilitado con Damasco, Multimax, IVOO, Venelectronics y SoyTechno</strong><span>La arquitectura mantiene cada fuente separada y permite sumar nuevas tiendas sin perder trazabilidad.</span></div><div className="stages"><span className="stage">Fase 1 · DAKA</span><span>→</span><span className="stage">Fase 2 · Damasco</span><span>→</span><span className="stage">Fase 3 · Multimax</span><span>→</span><span className="stage">Fase 4 · IVOO</span><span>→</span><span className="stage">Fase 5 · Venelectronics</span><span>→</span><span className="stage">Fase 6 · SoyTechno</span></div></section>
         </main>
-      ) : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} canAdmin={currentRole === "admin"} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}
+      ) : view === "universe" ? <main><DakaProductUniverse canAdmin={currentRole === "admin"}/></main>
+        : <TechnicalMonitoring jobs={jobs} sources={monitoringSources} latestRequest={latestRequest} running={running} reportSending={reportSending} canAdmin={currentRole === "admin"} onTriggerDaka={triggerScrape} onSendTelegramReport={sendTelegramReport}/>}
     </div>
   );
 }

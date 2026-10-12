@@ -14,6 +14,7 @@ test("mantiene una versión positiva y recorridos únicos", () => {
   assert.deepEqual(ONBOARDING_TOURS, [
     "general",
     "daka",
+    "universe",
     "competitors",
     "catalog_changes",
     "comparison",

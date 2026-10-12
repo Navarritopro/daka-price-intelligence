@@ -10,6 +10,7 @@ import {
 
 export type OnboardingNavigationTarget =
   | "explore"
+  | "universe"
   | "competitors"
   | "catalogChanges"
   | "comparison"
@@ -53,6 +54,13 @@ const HELP_SECTIONS: HelpSection[] = [
     target: "explore"
   },
   {
+    key: "universe",
+    title: "Universo de Productos Daka",
+    summary: "Consulta el maestro corporativo, la cédula y el inventario de todas las tiendas.",
+    details: ["Cédula comercial decodificada", "Inventario CDD y tiendas", "Calidad y cargas auditables"],
+    target: "universe"
+  },
+  {
     key: "competitors",
     title: "Catálogos competencia",
     summary: "Explora precios y disponibilidad de cada competidor.",
@@ -92,6 +100,7 @@ const HELP_SECTIONS: HelpSection[] = [
 const TOUR_TARGET: Record<OnboardingTourKey, OnboardingNavigationTarget> = {
   general: "explore",
   daka: "explore",
+  universe: "universe",
   competitors: "competitors",
   catalog_changes: "catalogChanges",
   comparison: "comparison",
@@ -106,7 +115,7 @@ function tourSteps(tour: OnboardingTourKey, role: Role): DriveStep[] {
 
   const tours: Record<OnboardingTourKey, DriveStep[]> = {
     general: [
-      { element: '[data-tour="module-nav"]', popover: { title: "Dos áreas principales", description: "Inteligencia de precios concentra el análisis comercial. Monitoreo técnico confirma que las capturas funcionan correctamente." } },
+      { element: '[data-tour="module-nav"]', popover: { title: "Tres áreas principales", description: "Inteligencia de precios analiza el mercado; Universo Daka reúne maestro, cédula e inventario; Monitoreo técnico confirma las capturas." } },
       { element: '[data-tour="dashboard-summary"]', popover: { title: "Resumen ejecutivo", description: "Estos indicadores presentan el catálogo DAKA, las oportunidades de rebaja, el precio promedio y la última ejecución exitosa." } },
       { element: '[data-tour="intelligence-tabs"]', popover: { title: "Módulos de análisis", description: "Desde aquí accedes al catálogo DAKA, históricos, competidores, comparador y oportunidades comerciales." } },
       { element: '[data-tour="catalog-filters"]', popover: { title: "Busca y filtra", description: "Combina nombre o código SAP con marca, estado y variación para reducir rápidamente el universo de productos." } },
@@ -117,6 +126,12 @@ function tourSteps(tour: OnboardingTourKey, role: Role): DriveStep[] {
       { element: '[data-tour="catalog-filters"]', popover: { title: "Filtros transversales", description: "Busca por nombre o SAP y combina marca, vigencia y tipo de variación." } },
       { element: '[data-tour="daka-catalog-list"]', popover: { title: "Catálogo de productos", description: "Selecciona un producto para revisar su precio y comportamiento. El listado carga más resultados al desplazarte." } },
       { element: '[data-tour="daka-product-detail"]', popover: { title: "Detalle e histórico", description: "Aquí encontrarás precio actual, variación, gráfico, máximos, mínimos y capturas guardadas." } }
+    ],
+    universe: [
+      { element: '[data-tour="daka-universe"]', popover: { title: "Universo corporativo", description: "Esta área es independiente del scraping web y reúne todos los SKU del maestro y del inventario." } },
+      { element: '.universe-tabs', popover: { title: "Cuatro vistas complementarias", description: "Alterna entre maestro y cédula, inventario consolidado, inventario por ubicación y calidad de datos." } },
+      { element: '.universe-filters', popover: { title: "Segmentación completa", description: "Busca por SKU o descripción y combina línea, familia, subfamilia, marca, estado e inventario." } },
+      { element: '.universe-table-card', popover: { title: "Ficha integral", description: "Abre cualquier SKU para interpretar su cédula y revisar cantidades originales y disponibles por ubicación." } }
     ],
     competitors: [
       { element: '[data-tour="competitor-source-tabs"]', popover: { title: "Selecciona una fuente", description: "Consulta cada competidor de forma independiente o revisa conjuntamente los cambios de disponibilidad." } },

@@ -1,0 +1,64 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import ExcelJS from "exceljs";
+import {
+  inventoryStatus,
+  normalizeLocation,
+  parseDakaCard,
+  parseInventoryWorkbook,
+  parseMasterWorkbook,
+  previewInventory,
+  previewMaster,
+  splitInventoryArticle
+} from "../lib/daka-universe.ts";
+
+test("decodifica la cédula sin modificar el valor original", () => {
+  const card = parseDakaCard("AAA12,94YLDP");
+  assert.equal(card.raw, "AAA12,94YLDP");
+  assert.deepEqual([card.companyAbc, card.lineAbc, card.familyAbc], ["A", "A", "A"]);
+  assert.equal(card.gmroi, 12.94);
+  assert.deepEqual([card.xyz, card.rotation, card.coverage, card.affectation], ["Y", "L", "D", "P"]);
+});
+
+test("preserva GMROI negativo y marca valores atípicos", () => {
+  const card = parseDakaCard("BCN-4,8NNNN");
+  assert.equal(card.gmroi, -4.8);
+  assert.equal(card.warning, true);
+  assert.equal(card.raw, "BCN-4,8NNNN");
+});
+
+test("N permanece disponible para producto nuevo o pocas ventas", () => {
+  const card = parseDakaCard("NNN0NNNN");
+  assert.equal(card.companyAbc, "N");
+  assert.equal(card.xyz, "N");
+});
+
+test("distingue ausencia, cero, negativo y disponibilidad", () => {
+  assert.equal(inventoryStatus(null, false), "absent");
+  assert.equal(inventoryStatus(0, true), "zero");
+  assert.equal(inventoryStatus(-3, true), "negative");
+  assert.equal(inventoryStatus(12, true), "available");
+});
+
+test("normaliza espacios de ubicación y separa artículo", () => {
+  assert.equal(normalizeLocation("Sucursal\u00a0San Felipe  "), "Sucursal San Felipe");
+  assert.deepEqual(splitInventoryArticle("LB-00000075 - CENTRO D/LAVADO"), { sku: "LB-00000075", description: "CENTRO D/LAVADO" });
+});
+
+test("valida y resume libros maestro e inventario", async () => {
+  const masterBook = new ExcelJS.Workbook();
+  const masterSheet = masterBook.addWorksheet("Hoja1");
+  masterSheet.addRow(["Linea", "Familia", "Marca", "SKU", "descripcion", "Cedula"]);
+  masterSheet.addRow(["Linea Blanca", "HORNOS", "MARCA", "LB-1", "HORNO", "AAA12,94YLDP"]);
+  const masterRows = await parseMasterWorkbook(Buffer.from(await masterBook.xlsx.writeBuffer()));
+  assert.equal(previewMaster(masterRows, "maestro.xlsx").uniqueSkus, 1);
+
+  const inventoryBook = new ExcelJS.Workbook();
+  const inventorySheet = inventoryBook.addWorksheet("Sheet1");
+  inventorySheet.addRow(["Articulo Completo", "Línea", "marca", "Familia", "SubFamilia", "Inv Tienda con cdd", "Sucursal_Display"]);
+  inventorySheet.addRow(["LB-1 - HORNO", "Blanca", "MARCA", "HORNOS", "HORNOS 26", -2, "CDD"]);
+  const inventoryRows = await parseInventoryWorkbook(Buffer.from(await inventoryBook.xlsx.writeBuffer()));
+  const preview = previewInventory(inventoryRows, "inventario.xlsx");
+  assert.equal(preview.uniqueSkus, 1);
+  assert.equal(preview.stats.negativeRows, 1);
+});
