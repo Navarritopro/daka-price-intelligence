@@ -33,9 +33,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for table in daka_import_batches daka_sku_master daka_sku_card_history daka_inventory_snapshots daka_locations daka_inventory_by_location; do
+          for table in daka_import_batches daka_sku_master daka_sku_card_history daka_inventory_snapshots daka_locations daka_inventory_by_location daka_price_snapshots daka_price_items daka_universe_matches daka_universe_match_audit; do
             exists="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT to_regclass('public.' || '$table') IS NOT NULL")"
             test "$exists" = "t" || { echo "No se creó $table"; exit 1; }
           done
           echo "## Universo de Productos Daka preparado" >> "$GITHUB_STEP_SUMMARY"
-          echo "Las seis tablas independientes fueron verificadas correctamente." >> "$GITHUB_STEP_SUMMARY"
+          echo "Las tablas del universo, precios diarios y homologación fueron verificadas correctamente." >> "$GITHUB_STEP_SUMMARY"
