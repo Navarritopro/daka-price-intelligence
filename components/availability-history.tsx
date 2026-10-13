@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AvailabilitySource } from "@/components/competitor-availability";
+import { readApiJson } from "@/lib/api-client";
 
 type Metric = "products" | "units";
 type HistoryMovement = "up" | "down" | "same" | "restocked" | "out" | "unquantified";
@@ -160,7 +161,7 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
     setLoading(true); setError(null); setPage(null); setItems([]); setSelected(null); setProductHistory(null);
     fetch(`/api/availability-history?${parameters(0)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as HistoryPage;
+        const payload = await readApiJson<HistoryPage>(response, "Histórico no disponible");
         if (!response.ok) throw new Error(payload.error ?? "Histórico no disponible");
         return payload;
       })
@@ -178,7 +179,7 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
     setLoadingMore(true);
     try {
       const response = await fetch(`/api/availability-history?${parameters(items.length)}`, { cache: "no-store" });
-      const payload = await response.json() as HistoryPage;
+      const payload = await readApiJson<HistoryPage>(response, "No fue posible cargar más productos");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible cargar más productos");
       setItems((current) => [...current, ...payload.items]); setPage(payload);
     } catch (requestError) {
@@ -194,7 +195,7 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
     if (days === "custom") { params.set("startDate", startDate); params.set("endDate", endDate); }
     fetch(`/api/availability-history/${selected.id}?${params}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as ProductHistory;
+        const payload = await readApiJson<ProductHistory>(response, "Detalle no disponible");
         if (!response.ok) throw new Error(payload.error ?? "Detalle no disponible");
         return payload;
       })

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import MatchReview from "@/components/match-review";
 import MatchManagement from "@/components/match-management";
 import CompetitorHistory from "@/components/competitor-history";
+import { readApiJson } from "@/lib/api-client";
 
 type StoreProduct = {
   id: number;
@@ -131,7 +132,7 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
     setTotal(0);
     fetch(`/api/comparison?${parameters(0).toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readApiJson<ComparisonPage & { error?: string }>(response, "Comparador no disponible");
         if (!response.ok) throw new Error(payload.error ?? "Comparador no disponible");
         return payload as ComparisonPage;
       })
@@ -161,7 +162,7 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
     const version = queryVersion.current;
     try {
       const response = await fetch(`/api/comparison?${parameters(items.length).toString()}`, { cache: "no-store" });
-      const page = await response.json() as ComparisonPage & { error?: string };
+      const page = await readApiJson<ComparisonPage & { error?: string }>(response, "No fue posible cargar más comparaciones");
       if (!response.ok) throw new Error(page.error ?? "No fue posible cargar más comparaciones");
       if (queryVersion.current !== version) return;
       setItems((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.matchId === item.matchId))]);

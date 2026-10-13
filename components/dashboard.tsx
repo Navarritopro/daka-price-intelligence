@@ -10,6 +10,7 @@ import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
 import OnboardingCenter, { type OnboardingNavigationTarget } from "@/components/onboarding-center";
 import DakaProductUniverse from "@/components/daka-product-universe";
+import { readApiJson } from "@/lib/api-client";
 
 type PricePoint = {
   price: number | null;
@@ -199,9 +200,10 @@ export default function Dashboard() {
         fetch("/api/jobs", { cache: "no-store" }),
         fetch("/api/requests", { cache: "no-store" })
       ]);
-      if (!summaryResponse.ok || !jobsResponse.ok || !requestResponse.ok) throw new Error("API unavailable");
       const [summaryData, jobsData, requestData]: [DashboardData, JobsResponse, ScrapeRequest | null] = await Promise.all([
-        summaryResponse.json(), jobsResponse.json(), requestResponse.json()
+        readApiJson<DashboardData>(summaryResponse, "No fue posible cargar el resumen"),
+        readApiJson<JobsResponse>(jobsResponse, "No fue posible cargar las ejecuciones"),
+        readApiJson<ScrapeRequest | null>(requestResponse, "No fue posible consultar la solicitud actual")
       ]);
       setSummary(summaryData);
       setJobs(jobsData.items);
@@ -257,7 +259,7 @@ export default function Dashboard() {
     resetProductScroll();
 
     fetch(`/api/products?${params.toString()}`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Products unavailable")))
+      .then((response) => readApiJson<ProductPage>(response, "No fue posible cargar el catálogo"))
       .then((page: ProductPage) => {
         if (version !== productQueryVersion.current) return;
         setProducts(page.items);
@@ -294,8 +296,7 @@ export default function Dashboard() {
 
     try {
       const response = await fetch(`/api/products?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Products unavailable");
-      const page: ProductPage = await response.json();
+      const page = await readApiJson<ProductPage>(response, "No fue posible cargar el siguiente grupo de productos");
       if (version !== productQueryVersion.current) return;
       setProducts((current) => {
         const known = new Set(current.map((product) => product.id));
@@ -339,7 +340,7 @@ export default function Dashboard() {
     setChangeTotal(0);
     setHasMoreChanges(false);
     fetch(`/api/price-changes?${params.toString()}`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Changes unavailable")))
+      .then((response) => readApiJson<ChangePage>(response, "No fue posible consultar los cambios de precios"))
       .then((page: ChangePage) => {
         if (version !== changeQueryVersion.current) return;
         setChangeProducts(page.items);
@@ -381,8 +382,7 @@ export default function Dashboard() {
     }
     try {
       const response = await fetch(`/api/price-changes?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Changes unavailable");
-      const page: ChangePage = await response.json();
+      const page = await readApiJson<ChangePage>(response, "No fue posible cargar el siguiente grupo de cambios");
       if (version !== changeQueryVersion.current) return;
       setChangeProducts((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.id === item.id))]);
       setChangeTotal(page.total);
@@ -404,9 +404,9 @@ export default function Dashboard() {
           fetch("/api/jobs", { cache: "no-store" }),
           fetch("/api/requests", { cache: "no-store" })
         ]);
-        if (!jobsResponse.ok || !requestResponse.ok) return;
         const [updatedJobs, updatedRequest]: [JobsResponse, ScrapeRequest | null] = await Promise.all([
-          jobsResponse.json(), requestResponse.json()
+          readApiJson<JobsResponse>(jobsResponse, "No fue posible actualizar las ejecuciones"),
+          readApiJson<ScrapeRequest | null>(requestResponse, "No fue posible actualizar la solicitud")
         ]);
         setJobs(updatedJobs.items);
         setMonitoringSources(updatedJobs.sources);
@@ -427,7 +427,7 @@ export default function Dashboard() {
     }
     const controller = new AbortController();
     fetch(`/api/products/${selected.id}/captures?limit=100&offset=0`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((response) => readApiJson<CapturePage>(response, "No fue posible cargar el histórico"))
       .then((page: CapturePage) => {
         setHistory(page.items); setHistoryTotal(page.total); setHistoryHasMore(page.hasMore);
         setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice); setHistoryChangeCount(page.changeCount);
@@ -444,8 +444,7 @@ export default function Dashboard() {
     setHistoryLoadingMore(true);
     try {
       const response = await fetch(`/api/products/${selected.id}/captures?limit=100&offset=${history.length}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("History unavailable");
-      const page: CapturePage = await response.json();
+      const page = await readApiJson<CapturePage>(response, "No fue posible cargar el siguiente grupo de capturas");
       setHistory((current) => [...current, ...page.items]);
       setHistoryTotal(page.total); setHistoryHasMore(page.hasMore);
       setHistoryMinPrice(page.minPrice); setHistoryMaxPrice(page.maxPrice); setHistoryChangeCount(page.changeCount);
@@ -475,7 +474,7 @@ export default function Dashboard() {
     setMovementsLoading(true);
     setMovements([]);
     fetch(`/api/products/${selected.id}/changes?${params.toString()}`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((response) => readApiJson<MovementPage>(response, "No fue posible cargar los movimientos"))
       .then((page: MovementPage) => {
         setMovements(page.items);
         setMovementTotal(page.total);
@@ -503,8 +502,7 @@ export default function Dashboard() {
     });
     try {
       const response = await fetch(`/api/products/${selected.id}/changes?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Movements unavailable");
-      const page: MovementPage = await response.json();
+      const page = await readApiJson<MovementPage>(response, "No fue posible cargar el siguiente grupo de movimientos");
       setMovements((current) => [...current, ...page.items]);
       setMovementTotal(page.total);
       setHasMoreMovements(page.hasMore);
@@ -545,7 +543,7 @@ export default function Dashboard() {
     setRunning(true);
     try {
       const response = await fetch("/api/scrape", { method: "POST" });
-      const payload = await response.json();
+      const payload = await readApiJson<{ error?: string; request: { id: string | number; requested_at: string } }>(response, "No fue posible iniciar la ejecución");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible iniciar la ejecución");
       setLatestRequest({
         id: String(payload.request.id),
@@ -570,7 +568,7 @@ export default function Dashboard() {
     setReportSending(true);
     try {
       const response = await fetch("/api/telegram-report", { method: "POST" });
-      const payload = await response.json();
+      const payload = await readApiJson<{ error?: string }>(response, "No fue posible solicitar el reporte");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible solicitar el reporte");
       setNotice("Reporte solicitado. GitHub lo generará y lo enviará por Telegram en unos segundos.");
     } catch (requestError) {

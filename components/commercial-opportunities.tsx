@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readApiJson } from "@/lib/api-client";
 
 type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type OpportunityType = "price_risk" | "price_advantage" | "availability_risk" | "availability_advantage" | "stale_data";
@@ -168,7 +169,7 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ searchParams: reportParameters().toString() })
       });
-      const payload = await response.json() as { sent?: boolean; total?: number; error?: string };
+      const payload = await readApiJson<{ sent?: boolean; total?: number; error?: string }>(response, "No fue posible enviar el reporte");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible enviar el reporte");
       setReportNotice(`PDF enviado por Telegram con ${integer.format(payload.total ?? 0)} oportunidades.`);
     } catch (requestError) {
@@ -192,7 +193,7 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
     setHasMore(false);
     fetch(`/api/opportunities?${parameters(0).toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json();
+        const payload = await readApiJson<OpportunityPage & { error?: string }>(response, "Centro de oportunidades no disponible");
         if (!response.ok) throw new Error(payload.error ?? "Centro de oportunidades no disponible");
         return payload as OpportunityPage;
       })
@@ -221,7 +222,7 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
     const version = queryVersion.current;
     try {
       const response = await fetch(`/api/opportunities?${parameters(items.length).toString()}`, { cache: "no-store" });
-      const page = await response.json() as OpportunityPage & { error?: string };
+      const page = await readApiJson<OpportunityPage & { error?: string }>(response, "No fue posible cargar más oportunidades");
       if (!response.ok) throw new Error(page.error ?? "No fue posible cargar más oportunidades");
       if (version !== queryVersion.current) return;
       setItems((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.daka.id === item.daka.id))]);

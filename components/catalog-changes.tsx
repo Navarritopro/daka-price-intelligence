@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { caracasToday, shiftIsoDate, type CatalogPeriodMode } from "@/lib/catalog-comparison";
+import { readApiJson } from "@/lib/api-client";
 
 type Source = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type ChangeState = "missing" | "confirmed" | "new" | "recovered";
@@ -102,7 +103,7 @@ export default function CatalogChanges() {
     setLoading(true); setError(null); setItems([]); setPage(null); setSelected(null);
     fetch(`/api/catalog-changes?${parameters(0)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as CatalogPage;
+        const payload = await readApiJson<CatalogPage>(response, "Cambios de catálogo no disponibles");
         if (!response.ok) throw new Error(payload.error ?? "Cambios de catálogo no disponibles");
         return payload;
       })
@@ -120,7 +121,7 @@ export default function CatalogChanges() {
     setLoadingMore(true);
     try {
       const response = await fetch(`/api/catalog-changes?${parameters(items.length)}`, { cache: "no-store" });
-      const payload = await response.json() as CatalogPage;
+      const payload = await readApiJson<CatalogPage>(response, "No fue posible cargar más productos");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible cargar más productos");
       setItems((current) => [...current, ...payload.items]); setPage(payload);
     } catch (requestError) {
@@ -166,7 +167,7 @@ export default function CatalogChanges() {
     setHistoryLoading(true); setHistory(null);
     fetch(`/api/catalog-changes/${selected.id}?${params}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await response.json() as ProductHistory;
+        const payload = await readApiJson<ProductHistory>(response, "Historial no disponible");
         if (!response.ok) throw new Error(payload.error ?? "Historial no disponible");
         return payload;
       })
@@ -192,7 +193,7 @@ export default function CatalogChanges() {
       const exported: CatalogItem[] = [];
       for (let offset = 0; offset < page.total; offset += 200) {
         const response = await fetch(`/api/catalog-changes?${parameters(offset, 200)}`, { cache: "no-store" });
-        const payload = await response.json() as CatalogPage;
+        const payload = await readApiJson<CatalogPage>(response, "No fue posible preparar la exportación");
         if (!response.ok) throw new Error(payload.error ?? "No fue posible preparar la exportación");
         exported.push(...payload.items);
         if (!payload.hasMore) break;

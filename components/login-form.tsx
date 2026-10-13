@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { readApiJson } from "@/lib/api-client";
 
 export default function LoginForm() {
   const search = useSearchParams();
@@ -20,7 +21,7 @@ export default function LoginForm() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password })
       });
-      const payload = await response.json();
+      const payload = await readApiJson<{ error?: string }>(response, "No fue posible iniciar sesión");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible iniciar sesión");
       const next = search.get("next");
       window.location.assign(next?.startsWith("/") && !next.startsWith("//") ? next : "/");

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { readApiJson } from "@/lib/api-client";
 import CompetitorAvailability, { type AvailabilitySource } from "@/components/competitor-availability";
 import type { ProductSummary } from "@/lib/types";
 
@@ -148,7 +149,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   useEffect(() => {
     setSummary(null); setSummaryError(null);
     fetch(`/api/catalog-summary?source=${source}`, { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((response) => readApiJson<Summary>(response, `No fue posible cargar el resumen de ${sourceName}`))
       .then(setSummary)
       .catch(() => setSummaryError(`No fue posible cargar el resumen de ${sourceName}.`));
   }, [source, sourceName]);
@@ -166,7 +167,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     setProductHasMore(false); setSelected(null); resetProductScroll();
     fetch(`/api/products?${productParams(0)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const page = await response.json();
+        const page = await readApiJson<ProductPage & { error?: string }>(response, "Catálogo no disponible");
         if (!response.ok) throw new Error(page.error ?? "Catálogo no disponible");
         return page as ProductPage;
       })
@@ -189,7 +190,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     const version = productVersion.current;
     try {
       const response = await fetch(`/api/products?${productParams(products.length)}`, { cache: "no-store" });
-      const page = await response.json() as ProductPage & { error?: string };
+      const page = await readApiJson<ProductPage & { error?: string }>(response, "No fue posible cargar más productos");
       if (!response.ok) throw new Error(page.error ?? "No fue posible cargar más productos");
       if (version !== productVersion.current) return;
       setProducts((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.id === item.id))]);
@@ -203,7 +204,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     const controller = new AbortController();
     setCaptureLoading(true); setCaptures([]);
     fetch(`/api/products/${selected.id}/captures?limit=${BATCH_SIZE}&offset=0`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((response) => readApiJson<CapturePage>(response, "No fue posible cargar el histórico"))
       .then((page: CapturePage) => { setCaptures(page.items); setCaptureTotal(page.total); setCaptureHasMore(page.hasMore); setHistoricalMinPrice(page.minPrice ?? null); setHistoricalMaxPrice(page.maxPrice ?? null); setCaptureChangeCount(page.changeCount ?? 0); })
       .catch((error) => { if (!(error instanceof DOMException && error.name === "AbortError")) { setCaptures([]); setCaptureTotal(0); } })
       .finally(() => setCaptureLoading(false));
@@ -215,7 +216,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     setCaptureLoadingMore(true);
     try {
       const response = await fetch(`/api/products/${selected.id}/captures?limit=${BATCH_SIZE}&offset=${captures.length}`, { cache: "no-store" });
-      const page = await response.json() as CapturePage;
+      const page = await readApiJson<CapturePage>(response, "No fue posible cargar el siguiente bloque del histórico");
       if (!response.ok) throw new Error();
       setCaptures((current) => [...current, ...page.items]); setCaptureTotal(page.total); setCaptureHasMore(page.hasMore); setCaptureChangeCount(page.changeCount ?? 0);
     } catch {
@@ -242,7 +243,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     setChangeLoading(true); setChangeError(null); setChangeProducts([]); setChangeTotal(0); setSelected(null);
     fetch(`/api/price-changes?${changeParams(0)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const page = await response.json();
+        const page = await readApiJson<ChangePage & { error?: string }>(response, "Cambios no disponibles");
         if (!response.ok) throw new Error(page.error ?? "Cambios no disponibles");
         return page as ChangePage;
       })
@@ -264,7 +265,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     setChangeLoadingMore(true); const version = changeVersion.current;
     try {
       const response = await fetch(`/api/price-changes?${changeParams(changeProducts.length)}`, { cache: "no-store" });
-      const page = await response.json() as ChangePage;
+      const page = await readApiJson<ChangePage>(response, "No fue posible cargar el siguiente bloque de cambios");
       if (!response.ok) throw new Error();
       if (version !== changeVersion.current) return;
       setChangeProducts((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.id === item.id))]);
@@ -279,7 +280,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     const params = new URLSearchParams({ limit: String(BATCH_SIZE), offset: "0", days, movement, threshold });
     setMovementLoading(true); setMovements([]);
     fetch(`/api/products/${selected.id}/changes?${params}`, { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((response) => readApiJson<CapturePage>(response, "No fue posible cargar los movimientos"))
       .then((page: CapturePage) => { setMovements(page.items); setMovementTotal(page.total); setMovementHasMore(page.hasMore); })
       .catch((error) => { if (!(error instanceof DOMException && error.name === "AbortError")) setMovements([]); })
       .finally(() => setMovementLoading(false));
@@ -292,7 +293,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     const params = new URLSearchParams({ limit: String(BATCH_SIZE), offset: String(movements.length), days, movement, threshold });
     try {
       const response = await fetch(`/api/products/${selected.id}/changes?${params}`, { cache: "no-store" });
-      const page = await response.json() as CapturePage;
+      const page = await readApiJson<CapturePage>(response, "No fue posible cargar el siguiente bloque de movimientos");
       if (!response.ok) throw new Error();
       setMovements((current) => [...current, ...page.items]); setMovementTotal(page.total); setMovementHasMore(page.hasMore);
     } catch {

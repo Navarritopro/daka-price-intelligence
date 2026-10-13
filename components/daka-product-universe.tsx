@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DakaUniverseHomologations from "@/components/daka-universe-homologations";
+import { readApiJson } from "@/lib/api-client";
 type Card = {
     periodMonth: string;
     raw: string;
@@ -189,7 +190,7 @@ export default function DakaProductUniverse({ canAdmin }: {
         setItems([]);
         try {
             const response = await fetch(`/api/daka-universe?${query(0)}`, { cache: "no-store" });
-            const payload = await response.json() as Page;
+            const payload = await readApiJson<Page>(response, "No fue posible cargar el universo Daka");
             if (!response.ok)
                 throw new Error(payload.error ?? "No fue posible cargar el universo Daka");
             setPage(payload);
@@ -209,7 +210,7 @@ export default function DakaProductUniverse({ canAdmin }: {
         setLoadingMore(true);
         try {
             const response = await fetch(`/api/daka-universe?${query(items.length)}`, { cache: "no-store" });
-            const payload = await response.json() as Page;
+            const payload = await readApiJson<Page>(response, "No fue posible cargar más productos");
             if (!response.ok)
                 throw new Error(payload.error);
             setItems((current) => [...current, ...payload.items]);
@@ -232,7 +233,7 @@ export default function DakaProductUniverse({ canAdmin }: {
         setLocationStock("all");
         setDetailLoading(true);
         fetch(`/api/daka-universe/${encodeURIComponent(selected.sku)}`, { cache: "no-store" })
-            .then(async (response) => { const payload = await response.json() as Detail; if (!response.ok)
+            .then(async (response) => { const payload = await readApiJson<Detail>(response, "No fue posible cargar el detalle"); if (!response.ok)
             throw new Error(payload.error); return payload; })
             .then(setDetail).catch((requestError) => setError(requestError instanceof Error ? requestError.message : "No fue posible cargar el detalle"))
             .finally(() => setDetailLoading(false));
@@ -300,24 +301,11 @@ export default function DakaProductUniverse({ canAdmin }: {
                 },
                 body: file
             });
-            const rawResponse = await response.text();
-            let payload: {
+            const payload = await readApiJson<{
                 preview?: Preview;
                 error?: string;
                 published?: boolean;
-            } = {};
-            if (rawResponse) {
-                try {
-                    payload = JSON.parse(rawResponse) as typeof payload;
-                }
-                catch {
-                    throw new Error(`El servidor respondió en un formato no válido (HTTP ${response.status}).`);
-                }
-            }
-            if (!rawResponse)
-                throw new Error(`El servidor no devolvió respuesta (HTTP ${response.status}). Revisa los registros del despliegue en Vercel.`);
-            if (!response.ok)
-                throw new Error(payload.error ?? "No fue posible procesar el archivo");
+            }>(response, "No fue posible procesar el archivo");
             setPreview(payload.preview ?? null);
             if (payload.published) {
                 const publishedName = file.name;

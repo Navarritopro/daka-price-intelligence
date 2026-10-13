@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { readApiJson } from "@/lib/api-client";
 
 type ReviewProduct = { id: number; externalId: string; name: string; url: string; price: number | null; inStock: boolean | null; brand?: string | null; model?: string | null; category?: string | null };
 type Evidence = { engineVersion?: string; brand?: string; productType?: string; sharedModels?: string[]; sharedAttributes?: string[]; tokenSimilarity?: number; nameSimilarity?: number; warnings?: string[]; conflicts?: string[]; variantNotes?: string[]; candidateRank?: number; candidateCount?: number; candidateTotal?: number };
@@ -63,7 +64,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
     const params = new URLSearchParams({ source, search: debouncedSearch, brand, limit: "15", offset: String(offset) });
     try {
       const response = await fetch(`/api/matches?${params.toString()}`, { cache: "no-store" });
-      const page = await response.json() as ReviewPage & { error?: string };
+      const page = await readApiJson<ReviewPage & { error?: string }>(response, "No fue posible cargar los candidatos");
       if (!response.ok) throw new Error(page.error ?? "No fue posible cargar los candidatos");
       setGroups((current) => offset === 0 ? page.groups : [...current, ...page.groups.filter((group) => !current.some((known) => known.daka.id === group.daka.id))]);
       setTotalProducts(page.totalProducts);
@@ -90,7 +91,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ matchId, action }),
       });
-      const result = await response.json();
+      const result = await readApiJson<{ error?: string }>(response, "No fue posible guardar la decisión");
       if (!response.ok) {
         throw new Error(result.error ?? "No fue posible guardar la decisión");
       }
@@ -132,7 +133,7 @@ export default function MatchReview({ source, competitorName, onBack, onDecision
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "confirm_bulk", matchIds: [...selected] }),
       });
-      const result = await response.json();
+      const result = await readApiJson<{ error?: string; confirmed: number; skipped?: number }>(response, "No fue posible confirmar la selección");
       if (!response.ok) {
         throw new Error(result.error ?? "No fue posible confirmar la selección");
       }

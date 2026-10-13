@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { readApiJson } from "@/lib/api-client";
 
 const SOURCE_META = {
   damasco: { name: "Damasco", color: "#B53112" },
@@ -54,15 +55,6 @@ const SOURCE_KEYS = Object.keys(SOURCE_META) as Source[];
 const money = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
 const integer = new Intl.NumberFormat("es-VE");
 const PAGE_SIZE = 20;
-
-async function readApiPayload<T extends { error?: string }>(response: Response, fallback: string): Promise<T> {
-  const body = await response.text();
-  try {
-    return JSON.parse(body) as T;
-  } catch {
-    throw new Error(response.ok ? fallback : "El servicio tardó demasiado en responder. Reintente en unos segundos.");
-  }
-}
 
 function decisionCount(row: Row) {
   return SOURCE_KEYS.filter((source) => Boolean(row.matches[source])).length;
@@ -171,7 +163,7 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     try {
       const params = new URLSearchParams({ search: debouncedSearch, brand, line, status, sort, limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
       const response = await fetch(`/api/daka-universe/homologations?${params}`, { cache: "no-store", signal });
-      const payload = await readApiPayload<Page>(response, "La respuesta de homologaciones no fue válida");
+      const payload = await readApiJson<Page>(response, "La respuesta de homologaciones no fue válida");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible cargar las homologaciones");
       setPageData(payload);
       setItems(payload.items);
@@ -208,7 +200,7 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     const params = new URLSearchParams({ mode: "candidates", sku: editor.row.sku, source: editor.source, search: debouncedCandidateSearch });
     fetch(`/api/daka-universe/homologations?${params}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const payload = await readApiPayload<{ items?: CompetitorProduct[]; catalogSize?: number; automatic?: boolean; error?: string }>(response, "La respuesta de candidatos no fue válida");
+        const payload = await readApiJson<{ items?: CompetitorProduct[]; catalogSize?: number; automatic?: boolean; error?: string }>(response, "La respuesta de candidatos no fue válida");
         if (!response.ok) throw new Error(payload.error ?? "No fue posible buscar candidatos");
         return payload;
       })
@@ -275,7 +267,7 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action, sku: editor.row.sku, source: editor.source, productId: selected?.id ?? null, reason, notes })
       });
-      const payload = await readApiPayload<{ matchId?: number; error?: string }>(response, "La respuesta al guardar la homologación no fue válida");
+      const payload = await readApiJson<{ matchId?: number; error?: string }>(response, "La respuesta al guardar la homologación no fue válida");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible guardar la homologación");
 
       const savedMatch: Match | undefined = action === "clear" ? undefined : {

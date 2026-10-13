@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { MATCH_CORRECTION_REASON_LABELS, type MatchCorrectionReason, type MatchManagementAction } from "@/lib/match-management";
+import { readApiJson } from "@/lib/api-client";
 
 type Product = { id: number; externalId: string; name: string; brand: string | null; model: string | null; category: string | null; url: string; price: number | null; inStock: boolean | null };
 type Audit = { action: "deactivated" | "replaced" | "restored"; reason: MatchCorrectionReason; notes: string | null; actor: string | null; createdAt: string };
@@ -58,7 +59,7 @@ export default function MatchManagement({ source, competitorName, onBack, onChan
     try {
       const params = new URLSearchParams({ source, state, search: debouncedSearch, brand, limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
       const response = await fetch(`/api/matches/manage?${params}`, { cache: "no-store", signal });
-      const payload = await response.json() as Page;
+      const payload = await readApiJson<Page>(response, "No fue posible cargar las homologaciones");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible cargar las homologaciones");
       setItems(payload.items); setTotal(payload.total); setBrands(payload.brands ?? []);
     } catch (requestError) {
@@ -77,7 +78,7 @@ export default function MatchManagement({ source, competitorName, onBack, onChan
     setCandidateLoading(true);
     const params = new URLSearchParams({ mode: "candidates", source, matchId: String(dialog.match.matchId), search: debouncedCandidateSearch, limit: "30" });
     fetch(`/api/matches/manage?${params}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.error ?? "No fue posible consultar candidatos"); return payload; })
+      .then(async (response) => { const payload = await readApiJson<{ items: Product[]; error?: string }>(response, "No fue posible consultar candidatos"); if (!response.ok) throw new Error(payload.error ?? "No fue posible consultar candidatos"); return payload; })
       .then((payload) => setCandidates(payload.items ?? []))
       .catch((requestError) => { if (!(requestError instanceof DOMException && requestError.name === "AbortError")) setError(requestError instanceof Error ? requestError.message : "No fue posible consultar candidatos"); })
       .finally(() => setCandidateLoading(false));
@@ -98,7 +99,7 @@ export default function MatchManagement({ source, competitorName, onBack, onChan
     setSaving(true); setError(null);
     try {
       const response = await fetch("/api/matches/manage", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: dialog.action, matchId: dialog.match.matchId, replacementProductId: selectedCandidate?.id ?? null, reason, notes, expectedUpdatedAt: dialog.match.updatedAt }) });
-      const payload = await response.json();
+      const payload = await readApiJson<{ error?: string }>(response, "No fue posible guardar la corrección");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible guardar la corrección");
       setDialog(null); setRefresh((value) => value + 1); onChanged();
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No fue posible guardar la corrección"); }

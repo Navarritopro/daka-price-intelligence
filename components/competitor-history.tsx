@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readApiJson } from "@/lib/api-client";
 
 type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type Product = { id: number; externalId: string; name: string; category?: string | null; url: string; price: number; inStock: boolean | null };
@@ -152,7 +153,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
     const version = ++queryVersion.current;
     setLoading(true); setError(null); setItems([]); setSelected(null); setDetail(null);
     fetch(`/api/comparison-history?${parameters(0)}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => { const payload = await response.json() as Page; if (!response.ok) throw new Error(payload.error); return payload; })
+      .then(async (response) => { const payload = await readApiJson<Page>(response, "No fue posible cargar el histórico"); if (!response.ok) throw new Error(payload.error); return payload; })
       .then((page) => { if (version !== queryVersion.current) return; setItems(page.items); setSelected(page.items[0] ?? null); setTotal(page.total); setHasMore(page.hasMore); setCategories(page.categories); setBrands(page.brands ?? []); setStats(page.stats); setPeriod(page.period); })
       .catch((requestError) => { if (!(requestError instanceof DOMException && requestError.name === "AbortError") && version === queryVersion.current) setError(requestError instanceof Error ? requestError.message : "No fue posible cargar el histórico"); })
       .finally(() => { if (version === queryVersion.current) setLoading(false); });
@@ -166,7 +167,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
     const detailParameters = new URLSearchParams({ source, days });
     if (days === "custom") { detailParameters.set("startDate", appliedCustomRange.startDate); detailParameters.set("endDate", appliedCustomRange.endDate); }
     fetch(`/api/comparison-history/${selected.matchId}?${detailParameters}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => { const payload = await response.json() as Detail; if (!response.ok) throw new Error(payload.error); return payload; })
+      .then(async (response) => { const payload = await readApiJson<Detail>(response, "No fue posible cargar el detalle"); if (!response.ok) throw new Error(payload.error); return payload; })
       .then(setDetail).catch((requestError) => { if (!(requestError instanceof DOMException && requestError.name === "AbortError")) setError(requestError instanceof Error ? requestError.message : "No fue posible cargar el detalle"); })
       .finally(() => setDetailLoading(false));
     return () => controller.abort();
@@ -177,7 +178,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
     setLoadingMore(true);
     try {
       const response = await fetch(`/api/comparison-history?${parameters(items.length)}`, { cache: "no-store" });
-      const page = await response.json() as Page;
+      const page = await readApiJson<Page>(response, "No fue posible cargar más productos");
       if (!response.ok) throw new Error(page.error);
       setItems((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.matchId === item.matchId))]);
       setTotal(page.total); setHasMore(page.hasMore); setStats(page.stats); setPeriod(page.period);
@@ -203,7 +204,7 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
       const exportParameters = parameters(0);
       exportParameters.set("export", "1");
       const response = await fetch(`/api/comparison-history?${exportParameters}`, { cache: "no-store" });
-      const page = await response.json() as Page;
+      const page = await readApiJson<Page>(response, "No fue posible preparar la exportación");
       if (!response.ok) throw new Error(page.error);
       const headers = ["Desde", "Hasta", "SAP DAKA", "Producto DAKA", "Categoría", "Competidor", "Referencia competidor", "Precio DAKA", `Precio ${competitorName}`, "Brecha USD actual", "Brecha % inicial", "Brecha % actual", "Cambio en puntos porcentuales", "Evolución competitiva", "Días del período", "Días comparables", "Días ventaja DAKA", `Días ventaja ${competitorName}`, "Días mismo precio", "Cambios de liderazgo"];
       const lines = [headers.map(csvCell).join(","), ...page.items.map((item) => [page.period.startDate, page.period.endDate, item.daka.externalId, item.daka.name, item.daka.category ?? "", competitorName, item.competitor.externalId, item.daka.price.toFixed(2), item.competitor.price.toFixed(2), item.latestGapUsd.toFixed(2), item.firstGapPct.toFixed(2), item.latestGapPct.toFixed(2), item.gapChangePct.toFixed(2), evolutionSummary(item, competitorName).title, page.period.totalDays, item.captureDays, item.dakaLowerDays, item.competitorLowerDays, item.equalDays, item.leadershipChanges].map(csvCell).join(","))];

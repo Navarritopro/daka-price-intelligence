@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AvailabilityHistory from "@/components/availability-history";
+import { readApiJson } from "@/lib/api-client";
 
 export type AvailabilitySource = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 
@@ -127,7 +128,7 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
     setHasMore(false);
     fetch(`/api/availability-changes?${parameters(0)}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
-        const page = await response.json() as AvailabilityPage;
+        const page = await readApiJson<AvailabilityPage>(response, "Disponibilidad no disponible");
         if (!response.ok) throw new Error(page.error ?? "Disponibilidad no disponible");
         return page;
       })
@@ -153,7 +154,7 @@ function LatestAvailability({ source }: { source: AvailabilitySource }) {
     setLoadingMore(true);
     try {
       const response = await fetch(`/api/availability-changes?${parameters(items.length)}`, { cache: "no-store" });
-      const page = await response.json() as AvailabilityPage;
+      const page = await readApiJson<AvailabilityPage>(response, "No fue posible cargar más productos");
       if (!response.ok) throw new Error(page.error ?? "No fue posible cargar más productos");
       setItems((current) => [...current, ...page.items]);
       setTotal(page.total);

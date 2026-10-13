@@ -7,6 +7,7 @@ import {
   type OnboardingStatus,
   type OnboardingTourKey
 } from "@/lib/onboarding";
+import { readApiJson } from "@/lib/api-client";
 
 export type OnboardingNavigationTarget =
   | "explore"
@@ -221,12 +222,12 @@ export default function OnboardingCenter({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tourKey, status, lastStep })
       });
-      if (!response.ok) return;
-      const payload = await response.json();
-      if (!payload.progress) return;
+      const payload = await readApiJson<{ progress?: Progress }>(response, "No fue posible guardar el progreso");
+      const savedProgress = payload.progress;
+      if (!savedProgress) return;
       setProgress((current) => [
-        payload.progress,
-        ...current.filter((item) => item.tourKey !== payload.progress.tourKey)
+        savedProgress,
+        ...current.filter((item) => item.tourKey !== savedProgress.tourKey)
       ]);
     } catch {
       // La ayuda debe seguir disponible aunque no sea posible guardar el progreso.
@@ -237,7 +238,7 @@ export default function OnboardingCenter({
     if (!role || initialized.current) return;
     initialized.current = true;
     void fetch("/api/onboarding", { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() as Promise<OnboardingPayload> : null)
+      .then((response) => readApiJson<OnboardingPayload>(response, "No fue posible cargar la ayuda"))
       .then((payload) => {
         if (!payload) return;
         setMode(payload.mode);
