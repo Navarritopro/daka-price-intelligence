@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MatchReview from "@/components/match-review";
 import MatchManagement from "@/components/match-management";
 import CompetitorHistory from "@/components/competitor-history";
+import FilterFeedback, { type ActiveFilter } from "@/components/filter-feedback";
 import { readApiJson } from "@/lib/api-client";
+import { describeComparisonFilters, type ComparisonFilterKey } from "@/lib/comparison-filter-state";
 
 type StoreProduct = {
   id: number;
@@ -112,6 +114,27 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queryVersion = useRef(0);
+
+  const activeFilters = useMemo<ActiveFilter[]>(() => {
+    const remove = (key: ComparisonFilterKey) => {
+      if (key === "search") { setSearch(""); setDebouncedSearch(""); }
+      if (key === "brand") setBrand("");
+      if (key === "category") setCategory("");
+      if (key === "position") setPosition("all");
+      if (key === "sort") setSort("gap_desc");
+    };
+    return describeComparisonFilters({ search, brand, category, position, sort }, competitor.name)
+      .map((filter) => ({ ...filter, onRemove: () => remove(filter.key) }));
+  }, [brand, category, competitor.name, position, search, sort]);
+
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    setDebouncedSearch("");
+    setBrand("");
+    setCategory("");
+    setPosition("all");
+    setSort("gap_desc");
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -229,13 +252,14 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
       <select aria-label="Posición competitiva" value={position} onChange={(event) => setPosition(event.target.value)}><option value="all">Todas las posiciones</option><option value="daka_lower">DAKA más económico</option><option value="competitor_lower">{competitor.name} más económico</option><option value="equal">Mismo precio</option></select>
       <select aria-label="Orden" value={sort} onChange={(event) => setSort(event.target.value)}><option value="gap_desc">Mayor brecha primero</option><option value="gap_asc">Menor brecha primero</option><option value="confidence">Mayor confianza</option><option value="recent">Captura más reciente</option></select>
     </section>
+    <FilterFeedback filters={activeFilters} visible={items.length} total={total} loading={loading} onClear={clearFilters}/>
 
-    {error && <div className="error-banner"><strong>Comparador pendiente</strong><span>{error}. Verifica que la migración y la primera captura de {competitor.name} estén completadas.</span></div>}
+    {error && <div className="error-banner comparison-error" role="alert"><div><strong>Comparador pendiente</strong><span>{error}. Verifica que la migración y la primera captura de {competitor.name} estén completadas.</span></div><button type="button" onClick={() => setRefreshToken((current) => current + 1)}>Reintentar</button></div>}
 
     <section className="comparison-grid" data-tour="comparison-grid">
       <article className="comparison-table-card">
         <div className="section-head"><h2>Productos comparados</h2><small>{loading ? "Consultando…" : `Mostrando ${integer.format(items.length)} de ${integer.format(total)}`}</small></div>
-        {loading ? <div className="empty-state">Analizando las coincidencias DAKA–{competitor.name}…</div> : items.length === 0 ? <div className="empty-state">No existen comparaciones confiables con estos filtros.</div> : <div className="table-scroll"><table className="comparison-table"><thead><tr><th>Producto DAKA</th><th>DAKA</th><th>{competitor.name}</th><th>Diferencia</th><th>Posición</th></tr></thead><tbody>{items.map((item) => <tr key={item.matchId} className={selected?.matchId === item.matchId ? "selected-comparison" : ""} onClick={() => setSelected(item)}><td><b>{item.daka.name}</b><small>SAP {item.daka.externalId} · {item.daka.category ?? "Sin categoría"}</small></td><td><strong>{money.format(item.daka.price)}</strong><small>{item.daka.inStock === false ? "Sin stock" : "Disponible"}</small></td><td><strong>{money.format(item.competitor.price)}</strong><small>{item.competitor.externalId}</small></td><td className={item.differenceUsd <= 0 ? "comparison-favorable" : "comparison-unfavorable"}><b>{item.differenceUsd > 0 ? "+" : ""}{money.format(item.differenceUsd)}</b><small>{item.differencePct > 0 ? "+" : ""}{item.differencePct.toFixed(1)}%</small></td><td><span className={`position-badge ${item.differenceUsd < 0 ? "daka" : item.differenceUsd > 0 ? "damasco" : "equal"}`}>{positionLabel(item, competitor.name)}</span></td></tr>)}</tbody></table></div>}
+        {loading ? <div className="comparison-loading" role="status"><span>Analizando las coincidencias DAKA–{competitor.name}…</span>{Array.from({ length: 4 }, (_, index) => <i key={index}/>)}</div> : items.length === 0 ? <div className="empty-state comparison-empty"><strong>No existen comparaciones con estos criterios.</strong><span>{activeFilters.length ? "Elimina uno o varios filtros para ampliar los resultados." : `Todavía no existen comparaciones confiables entre DAKA y ${competitor.name}.`}</span>{activeFilters.length > 0 && <button type="button" className="secondary-button" onClick={clearFilters}>Limpiar filtros</button>}</div> : <div className="table-scroll"><table className="comparison-table"><thead><tr><th>Producto DAKA</th><th>DAKA</th><th>{competitor.name}</th><th>Diferencia</th><th>Posición</th></tr></thead><tbody>{items.map((item) => <tr key={item.matchId} tabIndex={0} aria-label={`Comparar ${item.daka.name} con ${item.competitor.name}`} className={selected?.matchId === item.matchId ? "selected-comparison" : ""} onClick={() => setSelected(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(item); } }}><td><b>{item.daka.name}</b><small>SAP {item.daka.externalId} · {item.daka.category ?? "Sin categoría"}</small></td><td><strong>{money.format(item.daka.price)}</strong><small>{item.daka.inStock === false ? "Sin stock" : "Disponible"}</small></td><td><strong>{money.format(item.competitor.price)}</strong><small>{item.competitor.externalId}</small></td><td className={item.differenceUsd <= 0 ? "comparison-favorable" : "comparison-unfavorable"}><b>{item.differenceUsd > 0 ? "+" : ""}{money.format(item.differenceUsd)}</b><small>{item.differencePct > 0 ? "+" : ""}{item.differencePct.toFixed(1)}%</small></td><td><span className={`position-badge ${item.differenceUsd < 0 ? "daka" : item.differenceUsd > 0 ? "damasco" : "equal"}`}>{positionLabel(item, competitor.name)}</span></td></tr>)}</tbody></table></div>}
         {items.length > 0 && <div className="changes-load-more">{hasMore ? <button onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Cargando…" : "Cargar 50 comparaciones más"}</button> : <span>Se mostraron todas las comparaciones</span>}</div>}
       </article>
 
