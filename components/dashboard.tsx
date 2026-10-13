@@ -10,7 +10,9 @@ import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
 import OnboardingCenter, { type OnboardingNavigationTarget } from "@/components/onboarding-center";
 import DakaProductUniverse from "@/components/daka-product-universe";
+import FilterFeedback, { type ActiveFilter } from "@/components/filter-feedback";
 import { readApiJson } from "@/lib/api-client";
+import { describeCatalogFilters, describePriceChangeFilters } from "@/lib/catalog-filter-state";
 
 type PricePoint = {
   price: number | null;
@@ -157,6 +159,7 @@ export default function Dashboard() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [loadingMoreProducts, setLoadingMoreProducts] = useState(false);
   const [productLoadError, setProductLoadError] = useState<string | null>(null);
+  const [productRefreshToken, setProductRefreshToken] = useState(0);
   const [changeProducts, setChangeProducts] = useState<ChangeProduct[]>([]);
   const [changeStats, setChangeStats] = useState<ChangeStats>({ productsChanged: 0, totalChanges: 0, drops: 0, increases: 0 });
   const [changeDays, setChangeDays] = useState("30");
@@ -168,6 +171,7 @@ export default function Dashboard() {
   const [changesLoading, setChangesLoading] = useState(false);
   const [loadingMoreChanges, setLoadingMoreChanges] = useState(false);
   const [changeLoadError, setChangeLoadError] = useState<string | null>(null);
+  const [changeRefreshToken, setChangeRefreshToken] = useState(0);
   const [movements, setMovements] = useState<PricePoint[]>([]);
   const [movementTotal, setMovementTotal] = useState(0);
   const [hasMoreMovements, setHasMoreMovements] = useState(false);
@@ -278,7 +282,7 @@ export default function Dashboard() {
       });
 
     return () => controller.abort();
-  }, [brandFilter, debouncedSearch, changeFilter, priceTab, productStatus, resetProductScroll]);
+  }, [brandFilter, debouncedSearch, changeFilter, priceTab, productRefreshToken, productStatus, resetProductScroll]);
 
   const loadMoreProductResults = useCallback(async () => {
     if (loadingMoreRef.current || productsLoading || !hasMoreProducts) return;
@@ -360,7 +364,7 @@ export default function Dashboard() {
       });
 
     return () => controller.abort();
-  }, [brandFilter, changeDays, changeMovement, changeStatus, changeThreshold, debouncedSearch, priceTab, reportComparison]);
+  }, [brandFilter, changeDays, changeMovement, changeRefreshToken, changeStatus, changeThreshold, debouncedSearch, priceTab, reportComparison]);
 
   const loadMoreChanges = useCallback(async () => {
     if (loadingMoreChanges || changesLoading || !hasMoreChanges) return;
@@ -537,6 +541,26 @@ export default function Dashboard() {
     if (product) setSearch(product.externalId);
   }
 
+  function clearCatalogFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setBrandFilter("");
+    setProductStatus(historyMode ? "all" : "current");
+    setChangeFilter("all");
+  }
+
+  function clearPriceChangeFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setBrandFilter("");
+    setChangeMovement("all");
+    setChangeThreshold("0");
+    if (reportComparison?.source !== "daka") {
+      setChangeDays("30");
+      setChangeStatus("current");
+    }
+  }
+
   const chart = useMemo(() => chartPath(history), [history]);
 
   async function triggerScrape() {
@@ -587,6 +611,40 @@ export default function Dashboard() {
   const minPrice = historyMinPrice;
   const latestCapture = history[0] ?? null;
   const selectedChange = changeProducts.find((product) => product.id === selected?.id) ?? null;
+  const catalogFilterDescriptors = describeCatalogFilters({
+    search,
+    brand: brandFilter,
+    status: productStatus,
+    change: changeFilter
+  }, { historyMode });
+  const catalogActiveFilters: ActiveFilter[] = catalogFilterDescriptors.map((filter) => ({
+    ...filter,
+    onRemove: () => {
+      if (filter.key === "search") { setSearch(""); setDebouncedSearch(""); }
+      if (filter.key === "brand") setBrandFilter("");
+      if (filter.key === "status") setProductStatus("current");
+      if (filter.key === "change") setChangeFilter("all");
+    }
+  }));
+  const priceChangeFilterDescriptors = describePriceChangeFilters({
+    search,
+    brand: brandFilter,
+    days: changeDays,
+    movement: changeMovement,
+    threshold: changeThreshold,
+    status: changeStatus
+  }, { reportMode: reportComparison?.source === "daka" });
+  const priceChangeActiveFilters: ActiveFilter[] = priceChangeFilterDescriptors.map((filter) => ({
+    ...filter,
+    onRemove: () => {
+      if (filter.key === "search") { setSearch(""); setDebouncedSearch(""); }
+      if (filter.key === "brand") setBrandFilter("");
+      if (filter.key === "days") setChangeDays("30");
+      if (filter.key === "movement") setChangeMovement("all");
+      if (filter.key === "threshold") setChangeThreshold("0");
+      if (filter.key === "status") setChangeStatus("current");
+    }
+  }));
 
   const navigateFromOnboarding = useCallback((target: OnboardingNavigationTarget) => {
     setHistoryMode(false);
@@ -650,12 +708,13 @@ export default function Dashboard() {
           {priceTab === "explore" ? <>
           {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo por producto</strong><span>Selecciona un producto para consultar todas sus capturas, incluyendo los registros donde el precio no cambió.</span></div><button onClick={openExplorePrices}>Volver al catálogo actual</button></div>}
           <section className="filters" data-tour="catalog-filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>
+          <FilterFeedback filters={catalogActiveFilters} visible={products.length} total={totalProducts} loading={productsLoading} onClear={clearCatalogFilters}/>
 
           <section className="content-grid">
             <article className="product-list" data-tour="daka-catalog-list"><div className="section-head"><h2>{historyMode ? "Productos con histórico" : productStatus === "current" ? "Catálogo actual" : productStatus === "missing" ? "No vistos en última captura" : "Catálogo histórico"}</h2><small>{productsLoading ? "Consultando catálogo…" : `Mostrando ${integer.format(products.length)} de ${integer.format(totalProducts)}`}</small></div><div className="product-scroll" ref={productListRef} onScroll={handleProductScroll}>
               {productsLoading && <div className="empty-state">Buscando productos en todo el catálogo…</div>}
-              {!productsLoading && productLoadError && products.length === 0 && <div className="empty-state product-error">{productLoadError}</div>}
-              {!productsLoading && !productLoadError && products.length === 0 && <div className="empty-state">No encontramos productos con ese nombre o código SAP.</div>}
+              {!productsLoading && productLoadError && products.length === 0 && <div className="empty-state product-error comparison-empty" role="alert"><strong>Catálogo temporalmente no disponible</strong><span>{productLoadError}</span><button type="button" className="secondary-button" onClick={() => setProductRefreshToken((current) => current + 1)}>Reintentar</button></div>}
+              {!productsLoading && !productLoadError && products.length === 0 && <div className="empty-state comparison-empty"><strong>No encontramos productos con estos criterios.</strong><span>{catalogActiveFilters.length ? "Elimina uno o varios filtros para ampliar los resultados." : "El catálogo todavía no contiene productos para esta vista."}</span>{catalogActiveFilters.length > 0 && <button type="button" className="secondary-button" onClick={clearCatalogFilters}>Limpiar filtros</button>}</div>}
               {products.map((product, index) => <button key={product.id} aria-posinset={index + 1} aria-setsize={totalProducts} className={selected?.id === product.id ? "product-row active" : "product-row"} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.category ?? "Sin categoría"}</p>{!product.seenInLatest && <span className="product-status-badge">No visto en última captura</span>}</div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span></div></button>)}
               {products.length > 0 && <div className="product-load-state">{loadingMoreProducts ? "Cargando más productos…" : hasMoreProducts ? "Desplázate para continuar cargando" : "Se mostraron todos los productos"}{productLoadError && products.length > 0 ? ` · ${productLoadError}` : ""}</div>}
             </div></article>
@@ -670,10 +729,11 @@ export default function Dashboard() {
           </> : priceTab === "changes" ? <>
             {reportComparison?.source === "daka" && <div className="report-comparison-banner"><strong>Comparación del reporte de Telegram</strong><span>Se muestran exclusivamente las variaciones entre las dos capturas indicadas en la notificación.</span></div>}
             <section className="filters change-filters"><input aria-label="Buscar producto con cambios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Período de cambios" value={reportComparison?.source === "daka" ? "report" : changeDays} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeDays(event.target.value)}>{reportComparison?.source === "daka" && <option value="report">Capturas del reporte</option>}<option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select aria-label="Tipo de movimiento" value={changeMovement} onChange={(event) => setChangeMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select aria-label="Magnitud mínima" value={changeThreshold} onChange={(event) => setChangeThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select aria-label="Estado del catálogo" value={changeStatus} disabled={reportComparison?.source === "daka"} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></section>
+            <FilterFeedback filters={priceChangeActiveFilters} visible={changeProducts.length} total={changeTotal} loading={changesLoading} onClear={clearPriceChangeFilters}/>
             <section className="changes-summary"><article><span>Productos con cambios</span><strong>{changesLoading ? "…" : integer.format(changeStats.productsChanged)}</strong></article><article><span>Movimientos registrados</span><strong>{changesLoading ? "…" : integer.format(changeStats.totalChanges)}</strong></article><article className="drop"><span>Rebajas</span><strong>{changesLoading ? "…" : integer.format(changeStats.drops)}</strong></article><article className="rise"><span>Aumentos</span><strong>{changesLoading ? "…" : integer.format(changeStats.increases)}</strong></article></section>
             <section className="changes-grid">
               <article className="changes-table-card"><div className="section-head"><h2>Cambios encontrados</h2><small>{changesLoading ? "Consultando histórico…" : `Mostrando ${integer.format(changeProducts.length)} de ${integer.format(changeTotal)} productos`}</small></div>
-                {changesLoading ? <div className="empty-state">Analizando las capturas del período…</div> : changeLoadError && changeProducts.length === 0 ? <div className="empty-state product-error">{changeLoadError}</div> : changeProducts.length === 0 ? <div className="empty-state">No se encontraron cambios con estos filtros.</div> : <div className="table-scroll"><table className="changes-table"><thead><tr><th>Producto</th><th>Cambios</th><th>Precio inicial → final</th><th>Diferencia</th><th>Último cambio</th></tr></thead><tbody>{changeProducts.map((product) => <tr key={product.id} className={selected?.id === product.id ? "selected-change" : ""} onClick={() => setSelected(product)}><td><b>{product.name}</b><small>{product.externalId}</small></td><td><strong>{product.changeCount}</strong><small>movimientos</small></td><td>{product.initialPrice == null || product.finalPrice == null ? "—" : `${money.format(product.initialPrice)} → ${money.format(product.finalPrice)}`}</td><td className={changeClass(product.netDifferenceUsd)}><b>{product.netDifferenceUsd == null ? "—" : `${product.netDifferenceUsd > 0 ? "+" : ""}${money.format(product.netDifferenceUsd)}`}</b><small>{product.netChangePct == null ? "" : `${product.netChangePct > 0 ? "+" : ""}${product.netChangePct.toFixed(1)}% acumulado`}</small></td><td>{formatDate(product.latestChangeAt)}</td></tr>)}</tbody></table></div>}
+                {changesLoading ? <div className="empty-state">Analizando las capturas del período…</div> : changeLoadError && changeProducts.length === 0 ? <div className="empty-state product-error comparison-empty" role="alert"><strong>Cambios temporalmente no disponibles</strong><span>{changeLoadError}</span><button type="button" className="secondary-button" onClick={() => setChangeRefreshToken((current) => current + 1)}>Reintentar</button></div> : changeProducts.length === 0 ? <div className="empty-state comparison-empty"><strong>No se encontraron cambios con estos criterios.</strong><span>{priceChangeActiveFilters.length ? "Elimina uno o varios filtros para ampliar los resultados." : "Todavía no existen movimientos de precio en este período."}</span>{priceChangeActiveFilters.length > 0 && <button type="button" className="secondary-button" onClick={clearPriceChangeFilters}>Limpiar filtros</button>}</div> : <div className="table-scroll"><table className="changes-table"><thead><tr><th>Producto</th><th>Cambios</th><th>Precio inicial → final</th><th>Diferencia</th><th>Último cambio</th></tr></thead><tbody>{changeProducts.map((product) => <tr key={product.id} className={selected?.id === product.id ? "selected-change" : ""} onClick={() => setSelected(product)}><td><b>{product.name}</b><small>{product.externalId}</small></td><td><strong>{product.changeCount}</strong><small>movimientos</small></td><td>{product.initialPrice == null || product.finalPrice == null ? "—" : `${money.format(product.initialPrice)} → ${money.format(product.finalPrice)}`}</td><td className={changeClass(product.netDifferenceUsd)}><b>{product.netDifferenceUsd == null ? "—" : `${product.netDifferenceUsd > 0 ? "+" : ""}${money.format(product.netDifferenceUsd)}`}</b><small>{product.netChangePct == null ? "" : `${product.netChangePct > 0 ? "+" : ""}${product.netChangePct.toFixed(1)}% acumulado`}</small></td><td>{formatDate(product.latestChangeAt)}</td></tr>)}</tbody></table></div>}
                 {changeProducts.length > 0 && <div className="changes-load-more">{hasMoreChanges ? <button onClick={() => void loadMoreChanges()} disabled={loadingMoreChanges}>{loadingMoreChanges ? "Cargando…" : "Cargar 50 productos más"}</button> : <span>Se mostraron todos los productos con cambios</span>}</div>}
               </article>
               <article className="change-detail-card">

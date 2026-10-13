@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { readApiJson } from "@/lib/api-client";
 import CompetitorAvailability, { type AvailabilitySource } from "@/components/competitor-availability";
+import FilterFeedback, { type ActiveFilter } from "@/components/filter-feedback";
 import type { ProductSummary } from "@/lib/types";
+import { describeCatalogFilters, describePriceChangeFilters } from "@/lib/catalog-filter-state";
 
 type CatalogTab = "explore" | "changes" | "availability";
 type PricePoint = {
@@ -85,6 +87,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   const [historyMode, setHistoryMode] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryRefreshToken, setSummaryRefreshToken] = useState(0);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [status, setStatus] = useState("current");
@@ -98,6 +101,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   const [productLoading, setProductLoading] = useState(true);
   const [productLoadingMore, setProductLoadingMore] = useState(false);
   const [productError, setProductError] = useState<string | null>(null);
+  const [productRefreshToken, setProductRefreshToken] = useState(0);
   const [selected, setSelected] = useState<ProductSummary | null>(null);
   const [captures, setCaptures] = useState<PricePoint[]>([]);
   const [captureTotal, setCaptureTotal] = useState(0);
@@ -117,6 +121,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   const [changeLoading, setChangeLoading] = useState(false);
   const [changeLoadingMore, setChangeLoadingMore] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
+  const [changeRefreshToken, setChangeRefreshToken] = useState(0);
   const [changeStats, setChangeStats] = useState({ productsChanged: 0, totalChanges: 0, drops: 0, increases: 0 });
   const [movements, setMovements] = useState<PricePoint[]>([]);
   const [movementTotal, setMovementTotal] = useState(0);
@@ -152,7 +157,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       .then((response) => readApiJson<Summary>(response, `No fue posible cargar el resumen de ${sourceName}`))
       .then(setSummary)
       .catch(() => setSummaryError(`No fue posible cargar el resumen de ${sourceName}.`));
-  }, [source, sourceName]);
+  }, [source, sourceName, summaryRefreshToken]);
 
   const productParams = useCallback((offset: number) => new URLSearchParams({
     source, limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
@@ -182,7 +187,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       })
       .finally(() => { if (version === productVersion.current) setProductLoading(false); });
     return () => controller.abort();
-  }, [productParams, resetProductScroll, sourceName, tab]);
+  }, [productParams, productRefreshToken, resetProductScroll, sourceName, tab]);
 
   const loadMoreProducts = useCallback(async () => {
     if (loadingMoreRef.current || productLoading || !productHasMore) return;
@@ -258,7 +263,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       })
       .finally(() => { if (version === changeVersion.current) setChangeLoading(false); });
     return () => controller.abort();
-  }, [changeParams, sourceName, tab]);
+  }, [changeParams, changeRefreshToken, sourceName, tab]);
 
   const loadMoreChangeProducts = useCallback(async () => {
     if (changeLoading || changeLoadingMore || !changeHasMore) return;
@@ -325,14 +330,74 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     if (product) setSearch(product.externalId);
   }
 
+  function clearCatalogFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setBrand("");
+    setCategory("");
+    setStatus(historyMode ? "all" : "current");
+    setStock("all");
+    setChange("all");
+  }
+
+  function clearPriceChangeFilters() {
+    setSearch("");
+    setDebouncedSearch("");
+    setBrand("");
+    setMovement("all");
+    setThreshold("0");
+    if (!activeReportComparison) {
+      setDays("30");
+      setChangeStatus("current");
+    }
+  }
+
   const chart = useMemo(() => chartPath(captures), [captures]);
   const selectedChange = changeProducts.find((product) => product.id === selected?.id) ?? null;
   const latestCapture = captures[0] ?? null;
+  const catalogFilterDescriptors = describeCatalogFilters({
+    search,
+    brand,
+    category,
+    status,
+    stock,
+    change
+  }, { historyMode });
+  const catalogActiveFilters: ActiveFilter[] = catalogFilterDescriptors.map((filter) => ({
+    ...filter,
+    onRemove: () => {
+      if (filter.key === "search") { setSearch(""); setDebouncedSearch(""); }
+      if (filter.key === "brand") setBrand("");
+      if (filter.key === "category") setCategory("");
+      if (filter.key === "status") setStatus("current");
+      if (filter.key === "stock") setStock("all");
+      if (filter.key === "change") setChange("all");
+    }
+  }));
+  const priceChangeFilterDescriptors = describePriceChangeFilters({
+    search,
+    brand,
+    days,
+    movement,
+    threshold,
+    status: changeStatus
+  }, { reportMode: Boolean(activeReportComparison) });
+  const priceChangeActiveFilters: ActiveFilter[] = priceChangeFilterDescriptors.map((filter) => ({
+    ...filter,
+    onRemove: () => {
+      if (filter.key === "search") { setSearch(""); setDebouncedSearch(""); }
+      if (filter.key === "brand") setBrand("");
+      if (filter.key === "days") setDays("30");
+      if (filter.key === "movement") setMovement("all");
+      if (filter.key === "threshold") setThreshold("0");
+      if (filter.key === "status") setChangeStatus("current");
+    }
+  }));
 
   return <section className="damasco-catalog">
     <nav className="competitor-source-tabs" aria-label="Catálogo competidor" data-tour="competitor-source-tabs">{tab === "availability" && <><button className={availabilitySource === "all" ? "active" : ""} onClick={() => setAvailabilitySource("all")}>Todos</button><button className={availabilitySource === "daka" ? "active" : ""} onClick={() => setAvailabilitySource("daka")}>DAKA</button></>}{(Object.entries(SOURCES) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={(tab === "availability" ? availabilitySource : source) === slug ? "active" : ""} onClick={() => { if (tab === "availability") setAvailabilitySource(slug); else { resetProductScroll(); setSource(slug); setCategory(""); setBrand(""); } }}>{item.name}</button>)}</nav>
     {tab !== "availability" && <><div className="damasco-catalog-head"><div><span className="eyebrow-dark">Inteligencia competitiva · Catálogo completo</span><h2>Productos e histórico de {sourceName}</h2><p>Consulta todo el catálogo scrapeado aunque el producto todavía no esté homologado con DAKA.</p></div><div><span>Última captura</span><strong>{formatDate(summary?.lastScrapeAt)}</strong></div></div>
-    {summaryError && <div className="error-banner"><strong>Resumen pendiente</strong><span>{summaryError}</span></div>}
+    {summaryError && <div className="error-banner comparison-error" role="alert"><div><strong>Resumen pendiente</strong><span>{summaryError}</span></div><button type="button" onClick={() => setSummaryRefreshToken((current) => current + 1)}>Reintentar</button></div>}
     <div className="damasco-summary">
       <article><span>Catálogo actual</span><strong>{summary ? integer.format(summary.productsCurrent) : "…"}</strong><small>{integer.format(summary?.productsHistorical ?? 0)} históricos</small></article>
       <article><span>No vistos</span><strong>{summary ? integer.format(summary.productsNotSeen) : "…"}</strong><small>Ausentes en última captura</small></article>
@@ -344,8 +409,9 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     {tab === "explore" ? <>
       {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo de {sourceName}</strong><span>Consulta todas las capturas del producto, incluyendo registros donde el precio no cambió.</span></div><button onClick={openCatalog}>Volver al catálogo actual</button></div>}
       <div className="filters damasco-filters" data-tour="competitor-filters"><input aria-label={`Buscar en ${sourceName}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, referencia, marca o modelo"/><select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{summary?.brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select value={category} disabled={historyMode} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{summary?.categories.map((value) => <option key={value} value={value}>{value}</option>)}</select><select value={status} disabled={historyMode} onChange={(event) => setStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select><select value={stock} disabled={historyMode} onChange={(event) => setStock(event.target.value)}><option value="all">Cualquier disponibilidad</option><option value="in">Con stock</option><option value="out">Sin stock</option></select><select value={change} onChange={(event) => setChange(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select></div>
+      <FilterFeedback filters={catalogActiveFilters} visible={products.length} total={productTotal} loading={productLoading} onClear={clearCatalogFilters}/>
       <div className="content-grid" data-tour="competitor-content">
-        <article className="product-list"><div className="section-head"><h2>{historyMode ? `Productos con histórico · ${sourceName}` : `Catálogo ${sourceName}`}</h2><small>{productLoading ? "Consultando…" : `Mostrando ${integer.format(products.length)} de ${integer.format(productTotal)}`}</small></div><div className="product-scroll" ref={listRef} onScroll={handleScroll}>{productLoading ? <div className="empty-state">Buscando en todo el catálogo {sourceName}…</div> : productError && !products.length ? <div className="empty-state product-error">{productError}</div> : !products.length ? <div className="empty-state">No se encontraron productos con estos filtros.</div> : products.map((product, index) => <button key={product.id} aria-posinset={index + 1} aria-setsize={productTotal} className={selected?.id === product.id ? "product-row active" : "product-row"} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.brand ?? product.category ?? "Sin clasificación"}</p>{!product.seenInLatest && <span className="product-status-badge">No visto en última captura</span>}</div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span><small className={product.inStock === false ? "stock-label out" : "stock-label"}>{product.inStock === false ? "Sin stock" : "Disponible"}</small></div></button>)}{products.length > 0 && <div className="product-load-state">{productLoadingMore ? "Cargando más productos…" : productHasMore ? "Desplázate para continuar" : "Se mostraron todos los productos"}</div>}</div></article>
+        <article className="product-list"><div className="section-head"><h2>{historyMode ? `Productos con histórico · ${sourceName}` : `Catálogo ${sourceName}`}</h2><small>{productLoading ? "Consultando…" : `Mostrando ${integer.format(products.length)} de ${integer.format(productTotal)}`}</small></div><div className="product-scroll" ref={listRef} onScroll={handleScroll}>{productLoading ? <div className="empty-state">Buscando en todo el catálogo {sourceName}…</div> : productError && !products.length ? <div className="empty-state product-error comparison-empty" role="alert"><strong>Catálogo temporalmente no disponible</strong><span>{productError}</span><button type="button" className="secondary-button" onClick={() => setProductRefreshToken((current) => current + 1)}>Reintentar</button></div> : !products.length ? <div className="empty-state comparison-empty"><strong>No se encontraron productos con estos criterios.</strong><span>{catalogActiveFilters.length ? "Elimina uno o varios filtros para ampliar los resultados." : `El catálogo de ${sourceName} todavía no contiene productos para esta vista.`}</span>{catalogActiveFilters.length > 0 && <button type="button" className="secondary-button" onClick={clearCatalogFilters}>Limpiar filtros</button>}</div> : products.map((product, index) => <button key={product.id} aria-posinset={index + 1} aria-setsize={productTotal} className={selected?.id === product.id ? "product-row active" : "product-row"} onClick={() => setSelected(product)}><div><b>{product.name}</b><p>{product.externalId} · {product.brand ?? product.category ?? "Sin clasificación"}</p>{!product.seenInLatest && <span className="product-status-badge">No visto en última captura</span>}</div><div className="product-price"><strong>{product.currentPrice == null ? "Sin precio" : money.format(product.currentPrice)}</strong><span className={`variation ${changeClass(product.changePct)}`}>{product.changePct == null ? "—" : `${product.changePct > 0 ? "+" : ""}${product.changePct.toFixed(1)}%`}</span><small className={product.inStock === false ? "stock-label out" : "stock-label"}>{product.inStock === false ? "Sin stock" : "Disponible"}</small></div></button>)}{products.length > 0 && <div className="product-load-state">{productLoadingMore ? "Cargando más productos…" : productHasMore ? "Desplázate para continuar" : "Se mostraron todos los productos"}{productError ? ` · ${productError}` : ""}</div>}</div></article>
         <article className="detail-card">{selected ? <><div className="detail-main"><div className="detail-title"><div><h2>{selected.name}</h2><div className="meta"><span className={`source-badge ${source}-source`}>{sourceShort}</span> {sourceName} · Ref. {selected.externalId}</div><div className="product-tags">{selected.brand && <span>{selected.brand}</span>}{selected.model && <span>Modelo {selected.model}</span>}{selected.category && <span>{selected.category}</span>}</div>{!selected.seenInLatest && <div className="product-missing-notice">No fue visto en la última captura. Se conserva su último registro histórico.</div>}</div><div className="current-price"><span className="meta">{selected.seenInLatest ? "Precio publicado" : "Último precio registrado"}</span><strong>{selected.currentPrice == null ? "Sin precio" : money.format(selected.currentPrice)}</strong>{selected.listPrice != null && selected.currentPrice != null && selected.listPrice > selected.currentPrice && <span className="list-price">Antes {money.format(selected.listPrice)}</span>}<span className={`variation ${changeClass(selected.changePct)}`}>{selected.changePct == null ? "Sin comparación" : `${selected.changePct > 0 ? "+" : ""}${selected.changePct.toFixed(1)}% vs. captura anterior`}</span><span className={selected.inStock === false ? "availability out" : "availability"}>{selected.inStock === false ? "No disponible" : selected.availableQuantity == null ? "Disponible" : `${selected.availableQuantity} unidades reportadas`}</span></div></div>
           {historyMode && latestCapture && <div className="price-comparison-strip"><div><span>Precio anterior</span><strong>{latestCapture.previousPrice == null ? "Sin comparación" : money.format(latestCapture.previousPrice)}</strong></div><span className="comparison-arrow">→</span><div><span>Precio actual</span><strong>{latestCapture.price == null ? "Sin precio" : money.format(latestCapture.price)}</strong></div><div className={changeClass(latestCapture.differenceUsd)}><span>Último movimiento</span><strong>{latestCapture.differenceUsd == null ? "Sin variación" : `${latestCapture.differenceUsd > 0 ? "+" : ""}${money.format(latestCapture.differenceUsd)}`}</strong><small>{latestCapture.changePct == null ? "" : `${latestCapture.changePct > 0 ? "+" : ""}${latestCapture.changePct.toFixed(1)}%`}</small></div></div>}
           {captureLoading ? <div className="chart-empty">Cargando histórico…</div> : chart.line ? <svg className="price-chart" viewBox="0 0 760 245" role="img" aria-label={`Histórico de precio ${sourceName}`}><defs><linearGradient id="damascoArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#712b93" stopOpacity=".2"/><stop offset="1" stopColor="#712b93" stopOpacity="0"/></linearGradient></defs><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-area damasco-area" d={chart.area}/><path className="chart-line damasco-line" d={chart.line}/>{(historyMode ? chart.dots : chart.dots.slice(-1)).map((dot, index) => <circle key={`${dot.scrapedAt}-${index}`} className="chart-point damasco-point" cx={dot.x} cy={dot.y} r={historyMode ? "4" : "5"}><title>{`${formatDate(dot.scrapedAt)} · ${money.format(dot.price)}`}</title></circle>)}</svg> : <div className="chart-empty">El gráfico aparecerá después de almacenar más capturas.</div>}
@@ -355,8 +421,9 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     </> : tab === "changes" ? <>
       {activeReportComparison && <div className="report-comparison-banner"><strong>Comparación del reporte de Telegram</strong><span>Se muestran exclusivamente las variaciones entre las dos capturas indicadas en la notificación de {sourceName}.</span></div>}
       <div className="filters change-filters"><input aria-label={`Buscar cambios ${sourceName}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, referencia, marca o modelo"/><select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{summary?.brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select value={activeReportComparison ? "report" : days} disabled={Boolean(activeReportComparison)} onChange={(event) => setDays(event.target.value)}>{activeReportComparison && <option value="report">Capturas del reporte</option>}<option value="1">Hoy</option><option value="7">Últimos 7 días</option><option value="30">Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="all">Todo el histórico</option></select><select value={movement} onChange={(event) => setMovement(event.target.value)}><option value="all">Aumentos y rebajas</option><option value="down">Solo rebajas</option><option value="up">Solo aumentos</option></select><select value={threshold} onChange={(event) => setThreshold(event.target.value)}><option value="0">Cualquier magnitud</option><option value="5">Cambios ≥ 5%</option><option value="10">Cambios ≥ 10%</option><option value="20">Cambios ≥ 20%</option></select><select value={changeStatus} disabled={Boolean(activeReportComparison)} onChange={(event) => setChangeStatus(event.target.value)}><option value="current">Productos vigentes</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select></div>
+      <FilterFeedback filters={priceChangeActiveFilters} visible={changeProducts.length} total={changeTotal} loading={changeLoading} onClear={clearPriceChangeFilters}/>
       <div className="changes-summary"><article><span>Productos con cambios</span><strong>{changeLoading ? "…" : integer.format(changeStats.productsChanged)}</strong></article><article><span>Movimientos registrados</span><strong>{changeLoading ? "…" : integer.format(changeStats.totalChanges)}</strong></article><article className="drop"><span>Rebajas</span><strong>{changeLoading ? "…" : integer.format(changeStats.drops)}</strong></article><article className="rise"><span>Aumentos</span><strong>{changeLoading ? "…" : integer.format(changeStats.increases)}</strong></article></div>
-      <div className="changes-grid"><article className="changes-table-card"><div className="section-head"><h2>Cambios de precios {sourceName}</h2><small>{changeLoading ? "Analizando…" : `Mostrando ${integer.format(changeProducts.length)} de ${integer.format(changeTotal)}`}</small></div>{changeLoading ? <div className="empty-state">Analizando las capturas del período…</div> : changeError && !changeProducts.length ? <div className="empty-state product-error">{changeError}</div> : !changeProducts.length ? <div className="empty-state">Todavía no existen cambios con estos filtros.</div> : <div className="table-scroll"><table className="changes-table"><thead><tr><th>Producto</th><th>Cambios</th><th>Precio inicial → final</th><th>Diferencia</th><th>Último cambio</th></tr></thead><tbody>{changeProducts.map((product) => <tr key={product.id} className={selected?.id === product.id ? "selected-change" : ""} onClick={() => setSelected(product)}><td><b>{product.name}</b><small>{product.externalId} · {product.brand ?? sourceName}</small></td><td><strong>{product.changeCount}</strong><small>movimientos</small></td><td>{product.initialPrice == null || product.finalPrice == null ? "—" : `${money.format(product.initialPrice)} → ${money.format(product.finalPrice)}`}</td><td className={changeClass(product.netDifferenceUsd)}><b>{product.netDifferenceUsd == null ? "—" : `${product.netDifferenceUsd > 0 ? "+" : ""}${money.format(product.netDifferenceUsd)}`}</b><small>{product.netChangePct == null ? "" : `${product.netChangePct > 0 ? "+" : ""}${product.netChangePct.toFixed(1)}% acumulado`}</small></td><td>{formatDate(product.latestChangeAt)}</td></tr>)}</tbody></table></div>}<div className="changes-load-more">{changeHasMore ? <button onClick={() => void loadMoreChangeProducts()} disabled={changeLoadingMore}>{changeLoadingMore ? "Cargando…" : "Cargar 50 productos más"}</button> : changeProducts.length ? <span>Se mostraron todos los productos con cambios</span> : null}</div></article>
+      <div className="changes-grid"><article className="changes-table-card"><div className="section-head"><h2>Cambios de precios {sourceName}</h2><small>{changeLoading ? "Analizando…" : `Mostrando ${integer.format(changeProducts.length)} de ${integer.format(changeTotal)}`}</small></div>{changeLoading ? <div className="empty-state">Analizando las capturas del período…</div> : changeError && !changeProducts.length ? <div className="empty-state product-error comparison-empty" role="alert"><strong>Cambios temporalmente no disponibles</strong><span>{changeError}</span><button type="button" className="secondary-button" onClick={() => setChangeRefreshToken((current) => current + 1)}>Reintentar</button></div> : !changeProducts.length ? <div className="empty-state comparison-empty"><strong>No existen cambios con estos criterios.</strong><span>{priceChangeActiveFilters.length ? "Elimina uno o varios filtros para ampliar los resultados." : `Todavía no existen movimientos de precio almacenados para ${sourceName}.`}</span>{priceChangeActiveFilters.length > 0 && <button type="button" className="secondary-button" onClick={clearPriceChangeFilters}>Limpiar filtros</button>}</div> : <div className="table-scroll"><table className="changes-table"><thead><tr><th>Producto</th><th>Cambios</th><th>Precio inicial → final</th><th>Diferencia</th><th>Último cambio</th></tr></thead><tbody>{changeProducts.map((product) => <tr key={product.id} className={selected?.id === product.id ? "selected-change" : ""} onClick={() => setSelected(product)}><td><b>{product.name}</b><small>{product.externalId} · {product.brand ?? sourceName}</small></td><td><strong>{product.changeCount}</strong><small>movimientos</small></td><td>{product.initialPrice == null || product.finalPrice == null ? "—" : `${money.format(product.initialPrice)} → ${money.format(product.finalPrice)}`}</td><td className={changeClass(product.netDifferenceUsd)}><b>{product.netDifferenceUsd == null ? "—" : `${product.netDifferenceUsd > 0 ? "+" : ""}${money.format(product.netDifferenceUsd)}`}</b><small>{product.netChangePct == null ? "" : `${product.netChangePct > 0 ? "+" : ""}${product.netChangePct.toFixed(1)}% acumulado`}</small></td><td>{formatDate(product.latestChangeAt)}</td></tr>)}</tbody></table></div>}<div className="changes-load-more">{changeHasMore ? <button onClick={() => void loadMoreChangeProducts()} disabled={changeLoadingMore}>{changeLoadingMore ? "Cargando…" : "Cargar 50 productos más"}</button> : changeProducts.length ? <span>Se mostraron todos los productos con cambios</span> : null}</div></article>
         <article className="change-detail-card">{selectedChange ? <><div className="change-detail-head"><div><span className="eyebrow-dark">Histórico competitivo</span><h2>{selectedChange.name}</h2><p>Ref. {selectedChange.externalId} · {selectedChange.changeCount} cambios {days === "all" ? "en todo el histórico" : days === "1" ? "durante el día" : `en ${days} días`}</p><button className="history-link-button" onClick={() => openProductHistory(selectedChange)}>Ver todas las capturas del producto</button></div><div className={changeClass(selectedChange.netDifferenceUsd)}><strong>{selectedChange.netDifferenceUsd == null ? "—" : `${selectedChange.netDifferenceUsd > 0 ? "+" : ""}${money.format(selectedChange.netDifferenceUsd)}`}</strong><span>{selectedChange.netChangePct == null ? "Sin comparación" : `${selectedChange.netChangePct > 0 ? "+" : ""}${selectedChange.netChangePct.toFixed(1)}% acumulado`}</span></div></div>{chart.line && <><div className="chart-caption">Evolución de las capturas guardadas · coloca el cursor sobre un punto para ver su fecha y precio</div><svg className="price-chart change-chart" viewBox="0 0 760 245" role="img" aria-label={`Evolución del precio ${sourceName}`}><line className="chart-grid" x1="45" y1="45" x2="735" y2="45"/><line className="chart-grid" x1="45" y1="115" x2="735" y2="115"/><line className="chart-grid" x1="45" y1="190" x2="735" y2="190"/><path className="chart-line damasco-line" d={chart.line}/>{chart.dots.map((dot, index) => <circle key={`${dot.scrapedAt}-${index}`} className="chart-point damasco-point" cx={dot.x} cy={dot.y} r="4"><title>{`${formatDate(dot.scrapedAt)} · ${money.format(dot.price)}`}</title></circle>)}</svg><div className="mini-grid change-history-summary"><div><span>Precio máximo histórico</span><b>{historicalMaxPrice == null ? "—" : money.format(historicalMaxPrice)}</b></div><div><span>Precio mínimo histórico</span><b>{historicalMinPrice == null ? "—" : money.format(historicalMinPrice)}</b></div><div><span>Capturas guardadas</span><b>{integer.format(captureTotal)}</b></div><div><span>Cambios del período</span><b>{integer.format(selectedChange.changeCount)}</b></div></div></>}<div className="history-table"><div className="section-head"><div><h2>Historial de cambios de precio</h2><small className="section-explanation">Solo se muestran las capturas donde el precio cambió.</small></div><small>{movementLoading ? "Consultando…" : `Mostrando ${integer.format(movements.length)} de ${integer.format(movementTotal)}`}</small></div>{movementLoading ? <div className="empty-state">Cargando movimientos…</div> : <><div className="table-scroll"><table><thead><tr><th>Fecha</th><th>Precio anterior</th><th>Precio nuevo</th><th>Diferencia</th><th>Variación</th></tr></thead><tbody>{movements.map((point) => <tr key={point.scrapedAt}><td>{formatDate(point.scrapedAt)}</td><td>{point.previousPrice == null ? "—" : money.format(point.previousPrice)}</td><td>{point.price == null ? "—" : money.format(point.price)}</td><td className={changeClass(point.differenceUsd)}>{point.differenceUsd == null ? "—" : `${point.differenceUsd > 0 ? "+" : ""}${money.format(point.differenceUsd)}`}</td><td className={changeClass(point.changePct)}>{point.changePct == null ? "—" : `${point.changePct > 0 ? "+" : ""}${point.changePct.toFixed(1)}%`}</td></tr>)}</tbody></table></div><div className="changes-load-more">{movementHasMore ? <button onClick={() => void loadMoreMovements()} disabled={movementLoadingMore}>{movementLoadingMore ? "Cargando…" : "Cargar 50 movimientos más"}</button> : <span>{movementTotal ? "Se mostraron todos los cambios reales del período" : "No existen cambios en el período"}</span>}</div></>}</div></> : <div className="empty-state detail-empty">Selecciona un producto para consultar sus movimientos.</div>}</article></div>
     </> : <CompetitorAvailability source={availabilitySource}/>}
   </section>;
