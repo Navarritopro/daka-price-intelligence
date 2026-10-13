@@ -71,68 +71,119 @@ export async function GET(request: NextRequest) {
     const searchLike = `%${search}%`;
     const brandLike = `%${brand}%`;
     const lineLike = `%${line}%`;
-    const rows = await sql`
-      WITH latest_prices AS (
-        SELECT id, effective_date FROM daka_price_snapshots WHERE is_active ORDER BY effective_date DESC, created_at DESC LIMIT 1
-      ), base AS (
-        SELECT m.sku, m.description, m.brand, m.line, m.family, m.subfamily, m.active,
-          pi.price_usd, lp.effective_date AS price_date, p.id AS web_product_id, p.url AS web_url
-        FROM daka_sku_master m
-        LEFT JOIN latest_prices lp ON TRUE
-        LEFT JOIN daka_price_items pi ON pi.snapshot_id = lp.id AND pi.sku = m.sku
-        LEFT JOIN sources ds ON ds.slug = 'daka'
-        LEFT JOIN products p ON p.source_id = ds.id AND p.external_id = m.sku
-        WHERE (${search} = '' OR m.sku ILIKE ${searchLike} OR m.description ILIKE ${searchLike})
-          AND (${brand} = '' OR m.brand ILIKE ${brandLike})
-          AND (${line} = '' OR m.line ILIKE ${lineLike})
-      ), comparison_gaps AS (
-        SELECT um.sku, ABS(latest.price_usd - b.price_usd) AS gap
-        FROM daka_universe_matches um
-        JOIN base b ON b.sku = um.sku AND b.price_usd IS NOT NULL
-        JOIN products cp ON cp.id = um.competitor_product_id
-        JOIN LATERAL (
-          SELECT ph.price_usd FROM price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
-          WHERE ph.product_id = cp.id AND j.status = 'success' AND ph.price_usd IS NOT NULL
-          ORDER BY ph.scraped_at DESC LIMIT 1
-        ) latest ON TRUE
-        WHERE um.status = 'confirmed'
-        UNION ALL
-        SELECT dp.external_id AS sku, ABS(latest.price_usd - b.price_usd) AS gap
-        FROM product_matches pm
-        JOIN products dp ON dp.id = pm.daka_product_id
-        JOIN base b ON b.sku = dp.external_id AND b.price_usd IS NOT NULL
-        JOIN products cp ON cp.id = pm.competitor_product_id
-        JOIN LATERAL (
-          SELECT ph.price_usd FROM price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
-          WHERE ph.product_id = cp.id AND j.status = 'success' AND ph.price_usd IS NOT NULL
-          ORDER BY ph.scraped_at DESC LIMIT 1
-        ) latest ON TRUE
-        WHERE pm.status IN ('auto', 'confirmed')
-      ), counts AS (
-        SELECT b.*,
-          (SELECT COUNT(*) FROM daka_universe_matches um WHERE um.sku = b.sku AND um.status = 'confirmed')::int AS manual_count,
-          (SELECT COUNT(*) FROM product_matches pm JOIN products dp ON dp.id = pm.daka_product_id
-            WHERE dp.external_id = b.sku AND pm.status IN ('auto', 'confirmed'))::int AS web_count,
-          (SELECT COUNT(*) FROM daka_universe_matches um WHERE um.sku = b.sku AND um.status = 'no_applicable')::int AS no_apply_count,
-          (SELECT MAX(cg.gap) FROM comparison_gaps cg WHERE cg.sku = b.sku) AS max_gap
-        FROM base b
-      ), filtered AS (
-        SELECT *, LEAST(5, manual_count + web_count + no_apply_count) AS decision_count
-        FROM counts
-        WHERE (${status} = 'all'
-          OR (${status} = 'pending' AND manual_count + web_count + no_apply_count = 0)
-          OR (${status} = 'complete' AND manual_count + web_count + no_apply_count >= 5)
-          OR (${status} = 'partial' AND manual_count + web_count + no_apply_count BETWEEN 1 AND 4)
-          OR (${status} = 'no_applicable' AND no_apply_count > 0))
-      )
-      SELECT *, COUNT(*) OVER()::int AS total_count FROM filtered
-      ORDER BY
-        CASE WHEN ${sort} = 'pending_desc' THEN decision_count END ASC,
-        CASE WHEN ${sort} = 'pending_asc' THEN decision_count END DESC,
-        CASE WHEN ${sort} = 'gap_desc' THEN max_gap END DESC NULLS LAST,
-        description ASC, sku ASC
-      LIMIT ${limit} OFFSET ${offset}
-    `;
+    let rows: any[];
+    if (sort === "gap_desc") {
+      rows = await sql`
+        WITH latest_prices AS (
+          SELECT id, effective_date FROM daka_price_snapshots WHERE is_active ORDER BY effective_date DESC, created_at DESC LIMIT 1
+        ), base AS (
+          SELECT m.sku, m.description, m.brand, m.line, m.family, m.subfamily, m.active,
+            pi.price_usd, lp.effective_date AS price_date, p.id AS web_product_id, p.url AS web_url
+          FROM daka_sku_master m
+          LEFT JOIN latest_prices lp ON TRUE
+          LEFT JOIN daka_price_items pi ON pi.snapshot_id = lp.id AND pi.sku = m.sku
+          LEFT JOIN sources ds ON ds.slug = 'daka'
+          LEFT JOIN products p ON p.source_id = ds.id AND p.external_id = m.sku
+          WHERE (${search} = '' OR m.sku ILIKE ${searchLike} OR m.description ILIKE ${searchLike})
+            AND (${brand} = '' OR m.brand ILIKE ${brandLike})
+            AND (${line} = '' OR m.line ILIKE ${lineLike})
+        ), manual_counts AS (
+          SELECT sku,
+            COUNT(*) FILTER (WHERE status = 'confirmed')::int AS manual_count,
+            COUNT(*) FILTER (WHERE status = 'no_applicable')::int AS no_apply_count
+          FROM daka_universe_matches GROUP BY sku
+        ), web_counts AS (
+          SELECT dp.external_id AS sku, COUNT(*)::int AS web_count
+          FROM product_matches pm JOIN products dp ON dp.id = pm.daka_product_id
+          WHERE pm.status IN ('auto', 'confirmed') GROUP BY dp.external_id
+        ), matched_products AS (
+          SELECT um.sku, um.competitor_product_id AS product_id
+          FROM daka_universe_matches um WHERE um.status = 'confirmed' AND um.competitor_product_id IS NOT NULL
+          UNION ALL
+          SELECT dp.external_id AS sku, pm.competitor_product_id AS product_id
+          FROM product_matches pm JOIN products dp ON dp.id = pm.daka_product_id
+          WHERE pm.status IN ('auto', 'confirmed')
+        ), latest_matched_prices AS (
+          SELECT DISTINCT ON (ph.product_id) ph.product_id, ph.price_usd
+          FROM price_history ph
+          JOIN scraping_jobs j ON j.id = ph.job_id AND j.status = 'success'
+          JOIN (SELECT DISTINCT product_id FROM matched_products) mp ON mp.product_id = ph.product_id
+          WHERE ph.price_usd IS NOT NULL
+          ORDER BY ph.product_id, ph.scraped_at DESC
+        ), comparison_gaps AS (
+          SELECT mp.sku, MAX(ABS(lmp.price_usd - b.price_usd)) AS max_gap
+          FROM matched_products mp
+          JOIN latest_matched_prices lmp ON lmp.product_id = mp.product_id
+          JOIN base b ON b.sku = mp.sku AND b.price_usd IS NOT NULL
+          GROUP BY mp.sku
+        ), counts AS (
+          SELECT b.*, COALESCE(mc.manual_count, 0) AS manual_count,
+            COALESCE(wc.web_count, 0) AS web_count, COALESCE(mc.no_apply_count, 0) AS no_apply_count,
+            cg.max_gap
+          FROM base b
+          LEFT JOIN manual_counts mc ON mc.sku = b.sku
+          LEFT JOIN web_counts wc ON wc.sku = b.sku
+          LEFT JOIN comparison_gaps cg ON cg.sku = b.sku
+        ), filtered AS (
+          SELECT *, LEAST(5, manual_count + web_count + no_apply_count) AS decision_count
+          FROM counts
+          WHERE (${status} = 'all'
+            OR (${status} = 'pending' AND manual_count + web_count + no_apply_count = 0)
+            OR (${status} = 'complete' AND manual_count + web_count + no_apply_count >= 5)
+            OR (${status} = 'partial' AND manual_count + web_count + no_apply_count BETWEEN 1 AND 4)
+            OR (${status} = 'no_applicable' AND no_apply_count > 0))
+        )
+        SELECT *, COUNT(*) OVER()::int AS total_count FROM filtered
+        ORDER BY max_gap DESC NULLS LAST, description ASC, sku ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    } else {
+      rows = await sql`
+        WITH latest_prices AS (
+          SELECT id, effective_date FROM daka_price_snapshots WHERE is_active ORDER BY effective_date DESC, created_at DESC LIMIT 1
+        ), base AS (
+          SELECT m.sku, m.description, m.brand, m.line, m.family, m.subfamily, m.active,
+            pi.price_usd, lp.effective_date AS price_date, p.id AS web_product_id, p.url AS web_url
+          FROM daka_sku_master m
+          LEFT JOIN latest_prices lp ON TRUE
+          LEFT JOIN daka_price_items pi ON pi.snapshot_id = lp.id AND pi.sku = m.sku
+          LEFT JOIN sources ds ON ds.slug = 'daka'
+          LEFT JOIN products p ON p.source_id = ds.id AND p.external_id = m.sku
+          WHERE (${search} = '' OR m.sku ILIKE ${searchLike} OR m.description ILIKE ${searchLike})
+            AND (${brand} = '' OR m.brand ILIKE ${brandLike})
+            AND (${line} = '' OR m.line ILIKE ${lineLike})
+        ), manual_counts AS (
+          SELECT sku,
+            COUNT(*) FILTER (WHERE status = 'confirmed')::int AS manual_count,
+            COUNT(*) FILTER (WHERE status = 'no_applicable')::int AS no_apply_count
+          FROM daka_universe_matches GROUP BY sku
+        ), web_counts AS (
+          SELECT dp.external_id AS sku, COUNT(*)::int AS web_count
+          FROM product_matches pm JOIN products dp ON dp.id = pm.daka_product_id
+          WHERE pm.status IN ('auto', 'confirmed') GROUP BY dp.external_id
+        ), counts AS (
+          SELECT b.*, COALESCE(mc.manual_count, 0) AS manual_count,
+            COALESCE(wc.web_count, 0) AS web_count, COALESCE(mc.no_apply_count, 0) AS no_apply_count
+          FROM base b
+          LEFT JOIN manual_counts mc ON mc.sku = b.sku
+          LEFT JOIN web_counts wc ON wc.sku = b.sku
+        ), filtered AS (
+          SELECT *, LEAST(5, manual_count + web_count + no_apply_count) AS decision_count
+          FROM counts
+          WHERE (${status} = 'all'
+            OR (${status} = 'pending' AND manual_count + web_count + no_apply_count = 0)
+            OR (${status} = 'complete' AND manual_count + web_count + no_apply_count >= 5)
+            OR (${status} = 'partial' AND manual_count + web_count + no_apply_count BETWEEN 1 AND 4)
+            OR (${status} = 'no_applicable' AND no_apply_count > 0))
+        )
+        SELECT *, COUNT(*) OVER()::int AS total_count FROM filtered
+        ORDER BY
+          CASE WHEN ${sort} = 'pending_desc' THEN decision_count END ASC,
+          CASE WHEN ${sort} = 'pending_asc' THEN decision_count END DESC,
+          description ASC, sku ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    }
     const skus = rows.map((row) => row.sku);
     const universeMatches = skus.length ? await sql`
       SELECT um.sku, s.slug AS source, um.id, um.status, um.reason, um.notes, um.updated_at,
