@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/auth";
 import { asNumber, getSql } from "@/lib/db";
-import { candidateScore, HOMOLOGATION_SORTS, suggestionLevel, type HomologationSort } from "@/lib/daka-homologation";
+import { candidateScore, HOMOLOGATION_SORTS, normalizeHomologationText, suggestionLevel, type HomologationSort } from "@/lib/daka-homologation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       if (!sku || !isSource(requestedSource)) return NextResponse.json({ error: "SKU o competidor inválido" }, { status: 400 });
       const [master] = await sql`SELECT sku, description, brand, line, family FROM daka_sku_master WHERE sku = ${sku}`;
       if (!master) return NextResponse.json({ error: "El SKU no existe en el universo" }, { status: 404 });
-      const searchLike = `%${search}%`;
+      const normalizedSearch = normalizeHomologationText(search);
       const candidateLimit = search ? 500 : 3500;
       const rows = await sql`
         WITH latest_job AS (
@@ -42,8 +42,14 @@ export async function GET(request: NextRequest) {
         FROM products p JOIN sources s ON s.id = p.source_id AND s.slug = ${requestedSource}
         LEFT JOIN price_history ph ON ph.product_id = p.id AND ph.job_id = (SELECT id FROM latest_job)
         WHERE p.active = TRUE
-          AND (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
-            OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
+          AND (${normalizedSearch} = '' OR EXISTS (
+            SELECT 1
+            FROM unnest(regexp_split_to_array(${normalizedSearch}, '[[:space:]]+')) AS terms(search_term)
+            WHERE length(search_term) >= 2
+              AND search_term NOT IN ('de', 'del', 'la', 'el', 'los', 'las', 'con', 'para', 'por', 'una', 'uno')
+              AND translate(lower(concat_ws(' ', p.name, p.external_id, p.brand, p.model, p.category)),
+                'áéíóúüñ', 'aeiouun') LIKE '%' || search_term || '%'
+          ))
         ORDER BY p.last_seen_at DESC, p.name
         LIMIT ${candidateLimit}
       `;
