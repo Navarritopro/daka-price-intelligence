@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/auth";
 import { asNumber, getSql } from "@/lib/db";
+import { candidateScore, HOMOLOGATION_SORTS, suggestionLevel, type HomologationSort } from "@/lib/daka-homologation";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,29 +11,6 @@ type SourceSlug = typeof SOURCES[number];
 
 function isSource(value: string): value is SourceSlug {
   return (SOURCES as readonly string[]).includes(value);
-}
-
-function normalized(value: unknown) {
-  return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function tokens(value: unknown) {
-  return new Set(normalized(value).split(" ").filter((token) => token.length > 1));
-}
-
-function candidateScore(master: { description: string; brand: string; line: string; family: string }, candidate: any) {
-  const masterTokens = tokens(master.description);
-  const candidateTokens = tokens(`${candidate.name} ${candidate.model ?? ""}`);
-  const intersection = [...masterTokens].filter((token) => candidateTokens.has(token)).length;
-  const union = new Set([...masterTokens, ...candidateTokens]).size || 1;
-  const textScore = intersection / union;
-  const brandScore = normalized(master.brand) && normalized(master.brand) === normalized(candidate.brand) ? 0.35 : 0;
-  const categoryTokens = tokens(`${master.line} ${master.family}`);
-  const candidateCategory = tokens(candidate.category);
-  const categoryScore = [...categoryTokens].some((token) => candidateCategory.has(token) || candidateTokens.has(token)) ? 0.1 : 0;
-  const masterNumbers = [...masterTokens].filter((token) => /^\d/.test(token));
-  const numberScore = masterNumbers.length && masterNumbers.every((token) => candidateTokens.has(token)) ? 0.15 : 0;
-  return Math.min(0.99, textScore * 0.4 + brandScore + categoryScore + numberScore);
 }
 
 async function actor(request: NextRequest) {
@@ -53,7 +31,7 @@ export async function GET(request: NextRequest) {
       const [master] = await sql`SELECT sku, description, brand, line, family FROM daka_sku_master WHERE sku = ${sku}`;
       if (!master) return NextResponse.json({ error: "El SKU no existe en el universo" }, { status: 404 });
       const searchLike = `%${search}%`;
-      const brandLike = `%${master.brand ?? ""}%`;
+      const candidateLimit = search ? 500 : 3500;
       const rows = await sql`
         WITH latest_job AS (
           SELECT j.id FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
@@ -66,23 +44,28 @@ export async function GET(request: NextRequest) {
         WHERE p.active = TRUE
           AND (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
             OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
-          AND (${search} <> '' OR COALESCE(p.brand, '') ILIKE ${brandLike} OR p.name ILIKE ${brandLike})
         ORDER BY p.last_seen_at DESC, p.name
-        LIMIT 150
+        LIMIT ${candidateLimit}
       `;
-      const items = rows.map((row) => ({
+      const ranked = rows.map((row) => ({
         id: asNumber(row.id), externalId: row.external_id, name: row.name, brand: row.brand ?? null,
         model: row.model ?? null, category: row.category ?? null, url: row.url,
         price: row.price_usd == null ? null : asNumber(row.price_usd), inStock: row.in_stock ?? null,
-        score: candidateScore(master as any, row)
-      })).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "es")).slice(0, 30);
-      return NextResponse.json({ sku, source: requestedSource, items });
+        score: candidateScore(master as any, row as any)
+      })).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "es"));
+      const items = (search ? ranked : ranked.filter((item) => item.score >= 0.08)).slice(0, 30).map((item) => ({
+        ...item,
+        suggestionLevel: suggestionLevel(item.score)
+      }));
+      return NextResponse.json({ sku, source: requestedSource, items, catalogSize: rows.length, automatic: !search });
     }
 
     const search = params.get("search")?.trim() ?? "";
     const brand = params.get("brand")?.trim() ?? "";
     const line = params.get("line")?.trim() ?? "";
     const status = ["all", "pending", "complete", "partial", "no_applicable"].includes(params.get("status") ?? "") ? params.get("status")! : "all";
+    const requestedSort = params.get("sort") ?? "pending_desc";
+    const sort: HomologationSort = HOMOLOGATION_SORTS.includes(requestedSort as HomologationSort) ? requestedSort as HomologationSort : "pending_desc";
     const limit = Math.min(Math.max(Number(params.get("limit")) || 20, 1), 50);
     const offset = Math.max(Number(params.get("offset")) || 0, 0);
     const searchLike = `%${search}%`;
@@ -102,15 +85,39 @@ export async function GET(request: NextRequest) {
         WHERE (${search} = '' OR m.sku ILIKE ${searchLike} OR m.description ILIKE ${searchLike})
           AND (${brand} = '' OR m.brand ILIKE ${brandLike})
           AND (${line} = '' OR m.line ILIKE ${lineLike})
+      ), comparison_gaps AS (
+        SELECT um.sku, ABS(latest.price_usd - b.price_usd) AS gap
+        FROM daka_universe_matches um
+        JOIN base b ON b.sku = um.sku AND b.price_usd IS NOT NULL
+        JOIN products cp ON cp.id = um.competitor_product_id
+        JOIN LATERAL (
+          SELECT ph.price_usd FROM price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
+          WHERE ph.product_id = cp.id AND j.status = 'success' AND ph.price_usd IS NOT NULL
+          ORDER BY ph.scraped_at DESC LIMIT 1
+        ) latest ON TRUE
+        WHERE um.status = 'confirmed'
+        UNION ALL
+        SELECT dp.external_id AS sku, ABS(latest.price_usd - b.price_usd) AS gap
+        FROM product_matches pm
+        JOIN products dp ON dp.id = pm.daka_product_id
+        JOIN base b ON b.sku = dp.external_id AND b.price_usd IS NOT NULL
+        JOIN products cp ON cp.id = pm.competitor_product_id
+        JOIN LATERAL (
+          SELECT ph.price_usd FROM price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
+          WHERE ph.product_id = cp.id AND j.status = 'success' AND ph.price_usd IS NOT NULL
+          ORDER BY ph.scraped_at DESC LIMIT 1
+        ) latest ON TRUE
+        WHERE pm.status IN ('auto', 'confirmed')
       ), counts AS (
         SELECT b.*,
           (SELECT COUNT(*) FROM daka_universe_matches um WHERE um.sku = b.sku AND um.status = 'confirmed')::int AS manual_count,
           (SELECT COUNT(*) FROM product_matches pm JOIN products dp ON dp.id = pm.daka_product_id
             WHERE dp.external_id = b.sku AND pm.status IN ('auto', 'confirmed'))::int AS web_count,
-          (SELECT COUNT(*) FROM daka_universe_matches um WHERE um.sku = b.sku AND um.status = 'no_applicable')::int AS no_apply_count
+          (SELECT COUNT(*) FROM daka_universe_matches um WHERE um.sku = b.sku AND um.status = 'no_applicable')::int AS no_apply_count,
+          (SELECT MAX(cg.gap) FROM comparison_gaps cg WHERE cg.sku = b.sku) AS max_gap
         FROM base b
       ), filtered AS (
-        SELECT *, LEAST(5, manual_count + web_count) AS match_count
+        SELECT *, LEAST(5, manual_count + web_count + no_apply_count) AS decision_count
         FROM counts
         WHERE (${status} = 'all'
           OR (${status} = 'pending' AND manual_count + web_count + no_apply_count = 0)
@@ -119,7 +126,12 @@ export async function GET(request: NextRequest) {
           OR (${status} = 'no_applicable' AND no_apply_count > 0))
       )
       SELECT *, COUNT(*) OVER()::int AS total_count FROM filtered
-      ORDER BY description, sku LIMIT ${limit} OFFSET ${offset}
+      ORDER BY
+        CASE WHEN ${sort} = 'pending_desc' THEN decision_count END ASC,
+        CASE WHEN ${sort} = 'pending_asc' THEN decision_count END DESC,
+        CASE WHEN ${sort} = 'gap_desc' THEN max_gap END DESC NULLS LAST,
+        description ASC, sku ASC
+      LIMIT ${limit} OFFSET ${offset}
     `;
     const skus = rows.map((row) => row.sku);
     const universeMatches = skus.length ? await sql`
@@ -177,7 +189,7 @@ export async function GET(request: NextRequest) {
         priceDate: row.price_date, webProductId: row.web_product_id == null ? null : asNumber(row.web_product_id),
         webUrl: row.web_url, matches: bySku.get(row.sku) ?? {}
       })),
-      total: rows.length ? asNumber(rows[0].total_count) : 0, offset, limit,
+      total: rows.length ? asNumber(rows[0].total_count) : 0, offset, limit, sort,
       filters: filterValues ?? { brands: [], lines: [] }, sources: SOURCES
     });
   } catch (error) {

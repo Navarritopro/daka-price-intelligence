@@ -23,6 +23,7 @@ type CompetitorProduct = {
   price: number | null;
   inStock: boolean | null;
   score?: number;
+  suggestionLevel?: "high" | "medium" | "exploratory";
 };
 type Match = {
   origin: "web" | "universe";
@@ -56,19 +57,6 @@ const PAGE_SIZE = 20;
 
 function decisionCount(row: Row) {
   return SOURCE_KEYS.filter((source) => Boolean(row.matches[source])).length;
-}
-
-function pendingCount(row: Row) {
-  return SOURCE_KEYS.length - decisionCount(row);
-}
-
-function gapMagnitude(row: Row) {
-  if (row.price == null) return -1;
-  const gaps = SOURCE_KEYS.flatMap((source) => {
-    const competitorPrice = row.matches[source]?.product?.price;
-    return competitorPrice == null ? [] : [Math.abs(competitorPrice - row.price!)];
-  });
-  return gaps.length ? Math.max(...gaps) : -1;
 }
 
 function pricePosition(row: Row, source?: Source): "best" | "worst" | "tie" | null {
@@ -149,6 +137,8 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
   const [candidates, setCandidates] = useState<CompetitorProduct[]>([]);
   const [selected, setSelected] = useState<CompetitorProduct | null>(null);
   const [candidateLoading, setCandidateLoading] = useState(false);
+  const [candidateCatalogSize, setCandidateCatalogSize] = useState(0);
+  const [automaticSuggestions, setAutomaticSuggestions] = useState(true);
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
@@ -163,13 +153,13 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     const timer = window.setTimeout(() => setDebouncedCandidateSearch(candidateSearch.trim()), 350);
     return () => window.clearTimeout(timer);
   }, [candidateSearch]);
-  useEffect(() => { setPage(0); }, [brand, line, status, debouncedSearch]);
+  useEffect(() => { setPage(0); }, [brand, line, status, sort, debouncedSearch]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ search: debouncedSearch, brand, line, status, limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
+      const params = new URLSearchParams({ search: debouncedSearch, brand, line, status, sort, limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
       const response = await fetch(`/api/daka-universe/homologations?${params}`, { cache: "no-store", signal });
       const payload = await response.json() as Page;
       if (!response.ok) throw new Error(payload.error ?? "No fue posible cargar las homologaciones");
@@ -181,7 +171,7 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     } finally {
       setLoading(false);
     }
-  }, [brand, debouncedSearch, line, page, status]);
+  }, [brand, debouncedSearch, line, page, sort, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -203,7 +193,11 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
         if (!response.ok) throw new Error(payload.error ?? "No fue posible buscar candidatos");
         return payload;
       })
-      .then((payload) => setCandidates(payload.items ?? []))
+      .then((payload) => {
+        setCandidates(payload.items ?? []);
+        setCandidateCatalogSize(Number(payload.catalogSize ?? 0));
+        setAutomaticSuggestions(Boolean(payload.automatic));
+      })
       .catch((requestError) => {
         if (!(requestError instanceof DOMException && requestError.name === "AbortError")) {
           setError(requestError instanceof Error ? requestError.message : "No fue posible buscar candidatos");
@@ -220,6 +214,8 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     setReason(row.matches[source]?.reason ?? "");
     setNotes(row.matches[source]?.notes ?? "");
     setCandidates([]);
+    setCandidateCatalogSize(0);
+    setAutomaticSuggestions(true);
     setError(null);
   }
 
@@ -281,15 +277,11 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     }
   }
 
-  const visibleItems = useMemo(() => [...items].sort((a, b) => {
-    if (sort === "pending_desc") return pendingCount(b) - pendingCount(a) || a.description.localeCompare(b.description, "es");
-    if (sort === "pending_asc") return pendingCount(a) - pendingCount(b) || a.description.localeCompare(b.description, "es");
-    if (sort === "gap_desc") return gapMagnitude(b) - gapMagnitude(a) || a.description.localeCompare(b.description, "es");
-    return a.description.localeCompare(b.description, "es");
-  }), [items, sort]);
+  const visibleItems = items;
 
   const activeFilters = useMemo(() => [search.trim(), brand, line, status !== "all" ? status : ""].filter(Boolean).length, [brand, line, search, status]);
   const pages = Math.max(1, Math.ceil((pageData?.total ?? 0) / PAGE_SIZE));
+  const uniformDecisionProgress = visibleItems.length > 1 && visibleItems.every((row) => decisionCount(row) === decisionCount(visibleItems[0]));
 
   return <section className="universe-homologations">
     <div className="universe-match-intro">
@@ -312,7 +304,7 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     <article className="universe-match-table compact-matrix">
       <div className="matrix-toolbar">
         <div><strong>Vista comparativa</strong><span>Los cinco competidores permanecen en la misma fila del producto Daka.</span></div>
-        <label><span>Ordenar resultados visibles</span><select value={sort} onChange={(event) => setSort(event.target.value as SortMode)}><option value="pending_desc">Más pendientes primero</option><option value="pending_asc">Más completos primero</option><option value="gap_desc">Mayor brecha absoluta</option><option value="name">Nombre A–Z</option></select></label>
+        <label><span>Ordenar todos los resultados</span><select value={sort} onChange={(event) => setSort(event.target.value as SortMode)}><option value="pending_desc">Más pendientes primero</option><option value="pending_asc">Más completos primero</option><option value="gap_desc">Mayor brecha absoluta</option><option value="name">Nombre A–Z</option></select>{uniformDecisionProgress && (sort === "pending_desc" || sort === "pending_asc") && <small>Estos resultados tienen el mismo avance; por eso mantienen su orden alfabético.</small>}</label>
         <div className="matrix-scroll-controls" aria-label="Desplazar comparación"><button type="button" title="Mover a la izquierda" onClick={() => tableScrollRef.current?.scrollBy({ left: -420, behavior: "smooth" })}>←</button><button type="button" title="Mover a la derecha" onClick={() => tableScrollRef.current?.scrollBy({ left: 420, behavior: "smooth" })}>→</button></div>
       </div>
       <div className="table-scroll matrix-scroll" ref={tableScrollRef}>
@@ -356,7 +348,14 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
           </section> : <>
             <div className="manual-match-rule"><strong>Confirmación manual obligatoria</strong><span>Las sugerencias ayudan a buscar; el sistema nunca confirma automáticamente.</span></div>
             <label className="candidate-search"><span>Buscar en {SOURCE_META[editor.source].name}</span><input value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} placeholder="Nombre, referencia, marca o modelo" /></label>
-            {candidateLoading ? <div className="empty-state">Buscando candidatos…</div> : <div className="universe-candidate-list">{candidates.map((candidate) => <button key={candidate.id} className={selected?.id === candidate.id ? "selected" : ""} onClick={() => setSelected(candidate)}><div><strong>{candidate.name}</strong><span>{candidate.externalId} · {candidate.brand || "Sin marca"}{candidate.model ? ` · ${candidate.model}` : ""}</span><small>{candidate.category || "Sin categoría"}{candidate.score != null ? ` · Similitud ${Math.round(candidate.score * 100)}%` : ""}</small></div><div><b>{candidate.price == null ? "Sin precio" : money.format(candidate.price)}</b><small>{candidate.inStock === false ? "Sin disponibilidad" : "Disponible"}</small><a href={candidate.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Abrir ↗</a></div></button>)}{!candidates.length && <div className="empty-state">No encontramos sugerencias. Escriba una referencia o modelo para ampliar la búsqueda.</div>}</div>}
+            {candidateLoading ? <div className="candidate-loading"><span />Analizando el catálogo de {SOURCE_META[editor.source].name}…</div> : <>
+              <div className="candidate-results-head"><div><strong>{automaticSuggestions ? "Sugerencias automáticas" : "Resultados de búsqueda"}</strong><span>{candidates.length ? `${candidates.length} opciones para revisar` : "Sin coincidencias"}</span></div>{automaticSuggestions && <small>Analizadas sobre {integer.format(candidateCatalogSize)} referencias activas</small>}</div>
+              <div className="universe-candidate-list">{candidates.map((candidate) => {
+                const labels = { high: "Alta coincidencia", medium: "Coincidencia media", exploratory: "Revisar coincidencia" };
+                const level = candidate.suggestionLevel ?? "exploratory";
+                return <button key={candidate.id} className={selected?.id === candidate.id ? "selected" : ""} onClick={() => setSelected(candidate)}><div><span className={`suggestion-strength ${level}`}>{labels[level]}</span><strong>{candidate.name}</strong><span>{candidate.externalId} · {candidate.brand || "Sin marca"}{candidate.model ? ` · ${candidate.model}` : ""}</span><small>{candidate.category || "Sin categoría"}{candidate.score != null ? ` · Similitud ${Math.round(candidate.score * 100)}%` : ""}</small></div><div><b>{candidate.price == null ? "Sin precio" : money.format(candidate.price)}</b><small>{candidate.inStock === false ? "Sin disponibilidad" : "Disponible"}</small><a href={candidate.url} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>Abrir ↗</a></div></button>;
+              })}{!candidates.length && <div className="candidate-empty"><strong>{automaticSuggestions ? "No encontramos una sugerencia confiable" : "No encontramos productos con esa búsqueda"}</strong><span>{automaticSuggestions ? "Busque por modelo, referencia, marca o una parte del nombre. La homologación seguirá siendo manual." : "Pruebe una palabra más corta o la referencia exacta del competidor."}</span></div>}</div>
+            </>}
             <label className="candidate-search"><span>Observación opcional</span><textarea maxLength={500} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Contexto para la auditoría" /></label>
             <div className="manual-match-actions"><button className="primary-button" disabled={!selected || saving} onClick={() => void save("confirm")}>{saving ? "Guardando…" : "Confirmar producto seleccionado"}</button></div>
             <section className="no-apply-section"><h3>Este competidor no aplica</h3><p>Utilice esta opción únicamente cuando no exista un producto comparable.</p><input value={reason} onChange={(event) => setReason(event.target.value)} maxLength={250} placeholder="Motivo obligatorio" /><button disabled={!reason.trim() || saving} onClick={() => void save("no_applicable")}>Marcar como No aplica</button></section>
