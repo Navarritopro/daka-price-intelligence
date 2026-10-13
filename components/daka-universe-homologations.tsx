@@ -153,6 +153,7 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
   const [notes, setNotes] = useState("");
   const [refresh, setRefresh] = useState(0);
   const tableScrollRef = useRef<HTMLDivElement>(null);
+  const scrollToTableStartAfterLoadRef = useRef(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -174,6 +175,15 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
       if (!response.ok) throw new Error(payload.error ?? "No fue posible cargar las homologaciones");
       setPageData(payload);
       setItems(payload.items);
+      if (scrollToTableStartAfterLoadRef.current) {
+        scrollToTableStartAfterLoadRef.current = false;
+        window.requestAnimationFrame(() => {
+          const tableScroll = tableScrollRef.current;
+          if (!tableScroll) return;
+          const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          tableScroll.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+        });
+      }
     } catch (requestError) {
       if (requestError instanceof DOMException && requestError.name === "AbortError") return;
       setError(requestError instanceof Error ? requestError.message : "No fue posible cargar las homologaciones");
@@ -231,6 +241,16 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
   function openEditor(row: Row, source?: Source) {
     const firstPending = SOURCE_KEYS.find((key) => !row.matches[key]);
     resetEditorForm(row, source ?? firstPending ?? SOURCE_KEYS[0]);
+  }
+
+  function changePage(nextPage: number) {
+    if (loading || nextPage < 0 || nextPage >= pages || nextPage === page) return;
+    scrollToTableStartAfterLoadRef.current = true;
+    setPage(nextPage);
+  }
+
+  function prepareTableRefresh() {
+    scrollToTableStartAfterLoadRef.current = true;
   }
 
   function updateLocalMatch(sku: string, source: Source, match?: Match) {
@@ -304,21 +324,21 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
     </div>
 
     <section className="universe-filter-panel">
-      <div className="universe-filter-head"><div><strong>Filtrar homologaciones</strong><span>{activeFilters ? `${activeFilters} filtros activos` : "Sin filtros aplicados"}</span></div><button disabled={!activeFilters} onClick={() => { setSearch(""); setDebouncedSearch(""); setBrand(""); setLine(""); setStatus("all"); }}>× Limpiar filtros</button></div>
+      <div className="universe-filter-head"><div><strong>Filtrar homologaciones</strong><span>{activeFilters ? `${activeFilters} filtros activos` : "Sin filtros aplicados"}</span></div><button disabled={!activeFilters} onClick={() => { prepareTableRefresh(); setSearch(""); setDebouncedSearch(""); setBrand(""); setLine(""); setStatus("all"); }}>× Limpiar filtros</button></div>
       <div className="universe-match-filters">
-        <label><span>Producto</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="SKU o descripción" /></label>
-        <label><span>Marca</span><input list="universe-match-brands" value={brand} onChange={(event) => setBrand(event.target.value)} placeholder="Todas" /><datalist id="universe-match-brands">{pageData?.filters.brands.map((value) => <option key={value} value={value} />)}</datalist></label>
-        <label><span>Línea</span><input list="universe-match-lines" value={line} onChange={(event) => setLine(event.target.value)} placeholder="Todas" /><datalist id="universe-match-lines">{pageData?.filters.lines.map((value) => <option key={value} value={value} />)}</datalist></label>
-        <label><span>Estado</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Todos</option><option value="pending">Sin decisiones</option><option value="partial">Parcial</option><option value="complete">Completo</option><option value="no_applicable">Con “No aplica”</option></select></label>
+        <label><span>Producto</span><input value={search} onChange={(event) => { prepareTableRefresh(); setSearch(event.target.value); }} placeholder="SKU o descripción" /></label>
+        <label><span>Marca</span><input list="universe-match-brands" value={brand} onChange={(event) => { prepareTableRefresh(); setBrand(event.target.value); }} placeholder="Todas" /><datalist id="universe-match-brands">{pageData?.filters.brands.map((value) => <option key={value} value={value} />)}</datalist></label>
+        <label><span>Línea</span><input list="universe-match-lines" value={line} onChange={(event) => { prepareTableRefresh(); setLine(event.target.value); }} placeholder="Todas" /><datalist id="universe-match-lines">{pageData?.filters.lines.map((value) => <option key={value} value={value} />)}</datalist></label>
+        <label><span>Estado</span><select value={status} onChange={(event) => { prepareTableRefresh(); setStatus(event.target.value); }}><option value="all">Todos</option><option value="pending">Sin decisiones</option><option value="partial">Parcial</option><option value="complete">Completo</option><option value="no_applicable">Con “No aplica”</option></select></label>
       </div>
     </section>
 
     {error && <div className="error-banner"><strong>No se pudo completar la operación</strong><span>{error}</span><button onClick={() => setRefresh((value) => value + 1)}>Reintentar</button></div>}
 
-    <article className="universe-match-table compact-matrix">
+    <article className="universe-match-table compact-matrix" aria-busy={loading}>
       <div className="matrix-toolbar">
         <div><strong>Vista comparativa</strong><span>Los cinco competidores permanecen en la misma fila del producto Daka.</span></div>
-        <label><span>Ordenar todos los resultados</span><select value={sort} onChange={(event) => setSort(event.target.value as SortMode)}><option value="pending_desc">Más pendientes primero</option><option value="pending_asc">Más completos primero</option><option value="gap_desc">Mayor brecha absoluta</option><option value="name">Nombre A–Z</option></select>{uniformDecisionProgress && (sort === "pending_desc" || sort === "pending_asc") && <small>Estos resultados tienen el mismo avance; por eso mantienen su orden alfabético.</small>}</label>
+        <label><span>Ordenar todos los resultados</span><select value={sort} onChange={(event) => { prepareTableRefresh(); setSort(event.target.value as SortMode); }}><option value="pending_desc">Más pendientes primero</option><option value="pending_asc">Más completos primero</option><option value="gap_desc">Mayor brecha absoluta</option><option value="name">Nombre A–Z</option></select>{uniformDecisionProgress && (sort === "pending_desc" || sort === "pending_asc") && <small>Estos resultados tienen el mismo avance; por eso mantienen su orden alfabético.</small>}</label>
         <div className="matrix-scroll-controls" aria-label="Desplazar comparación"><button type="button" title="Mover a la izquierda" onClick={() => tableScrollRef.current?.scrollBy({ left: -420, behavior: "smooth" })}>←</button><button type="button" title="Mover a la derecha" onClick={() => tableScrollRef.current?.scrollBy({ left: 420, behavior: "smooth" })}>→</button></div>
       </div>
       <div className="table-scroll matrix-scroll" ref={tableScrollRef}>
@@ -344,7 +364,7 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
       </div>
       {loading && <div className="empty-state">Consultando homologaciones…</div>}
       {!loading && !items.length && <div className="empty-state">No existen productos con estos filtros.</div>}
-      <div className="management-pagination"><button disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>Anterior</button><span>Página {page + 1} de {pages}</span><button disabled={page + 1 >= pages} onClick={() => setPage((value) => value + 1)}>Siguiente</button></div>
+      <div className="management-pagination"><button disabled={loading || page === 0} onClick={() => changePage(page - 1)}>Anterior</button><span aria-live="polite" aria-atomic="true">{loading ? `Cargando página ${page + 1}…` : `Página ${page + 1} de ${pages}`}</span><button disabled={loading || page + 1 >= pages} onClick={() => changePage(page + 1)}>Siguiente</button></div>
     </article>
 
     {editor && <div className="universe-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditor(null); }}>
