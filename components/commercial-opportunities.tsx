@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readApiJson } from "@/lib/api-client";
+import { useAccessibleDialog } from "@/hooks/use-accessible-dialog";
 
 type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type OpportunityType = "price_risk" | "price_advantage" | "availability_risk" | "availability_advantage" | "stale_data";
@@ -142,6 +143,9 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
   const [reportNotice, setReportNotice] = useState<string | null>(null);
   const [telegramSending, setTelegramSending] = useState(false);
   const queryVersion = useRef(0);
+  const detailTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const drawerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -236,12 +240,12 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
     }
   }, [hasMore, items.length, loading, loadingMore, parameters]);
 
-  useEffect(() => {
-    if (!selected) return;
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setSelected(null); };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [selected]);
+  const closeDetail = useCallback(() => setSelected(null), []);
+  const openDetail = useCallback((item: Opportunity, trigger: HTMLButtonElement) => {
+    detailTriggerRef.current = trigger;
+    setSelected(item);
+  }, []);
+  useAccessibleDialog({ open: Boolean(selected), onClose: closeDetail, dialogRef: drawerRef, initialFocusRef: closeButtonRef, returnFocusRef: detailTriggerRef });
 
   return <section className="commercial-opportunities">
     <header className="opportunity-head" data-tour="opportunity-head">
@@ -298,15 +302,15 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
           <td className={item.primary.favorable ? "opportunity-positive" : "opportunity-negative"}><strong>{item.primary.differenceUsd == null ? "—" : `${item.primary.differenceUsd > 0 ? "+" : ""}${money.format(item.primary.differenceUsd)}`}</strong><small>{item.primary.differencePct == null ? "Sin comparación" : `${item.primary.differencePct > 0 ? "+" : ""}${item.primary.differencePct.toFixed(1)}%`}</small></td>
           <td><small>DAKA: {stockLabel(item.daka)}</small><small>{item.primary.sourceName}: {primaryComparison ? stockLabel(primaryComparison.competitor) : "No reportada"}</small></td>
           <td>{formatDate(item.detectedAt)}</td>
-          <td><button className="opportunity-detail-button" onClick={() => setSelected(item)}>Ver detalle</button></td>
+          <td><button className="opportunity-detail-button" aria-haspopup="dialog" aria-expanded={selected?.daka.id === item.daka.id} onClick={(event) => openDetail(item, event.currentTarget)}>Ver detalle</button></td>
         </tr>;
       })}</tbody></table></div>}
       {items.length > 0 && <div className="changes-load-more">{hasMore ? <button onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Cargando…" : "Cargar 50 oportunidades más"}</button> : <span>Se mostraron todas las oportunidades encontradas</span>}</div>}
     </article>
 
-    {selected && <div className="opportunity-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelected(null); }}>
-      <aside className="opportunity-drawer" role="dialog" aria-modal="true" aria-labelledby="opportunity-detail-title">
-        <header className="opportunity-detail-head"><div><span className="eyebrow-dark">Análisis competitivo</span><h2 id="opportunity-detail-title">{selected.daka.name}</h2><small>SAP {selected.daka.externalId} · {selected.daka.brand ?? selected.daka.category ?? "Sin clasificación"}</small></div><button aria-label="Cerrar detalle" onClick={() => setSelected(null)}>×</button></header>
+    {selected && <div className="opportunity-drawer-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDetail(); }}>
+      <aside ref={drawerRef} tabIndex={-1} className="opportunity-drawer" role="dialog" aria-modal="true" aria-labelledby="opportunity-detail-title">
+        <header className="opportunity-detail-head"><div><span className="eyebrow-dark">Análisis competitivo</span><h2 id="opportunity-detail-title">{selected.daka.name}</h2><small>SAP {selected.daka.externalId} · {selected.daka.brand ?? selected.daka.category ?? "Sin clasificación"}</small></div><button ref={closeButtonRef} aria-label="Cerrar detalle" onClick={closeDetail}>×</button></header>
         <div className="opportunity-drawer-body">
           <div className={`opportunity-conclusion ${selected.primary.favorable ? "favorable" : "unfavorable"}`}><div><span className={`opportunity-priority-badge ${selected.primary.priority}`}>{priorityLabel(selected.primary.priority)}</span><strong>{selected.primary.label}</strong></div><p>{selected.primary.explanation}</p><small>La señal se calcula con precios y disponibilidad; no constituye una recomendación automática de descuento.</small></div>
           <section className="opportunity-daka-card"><div><span className="store-label daka-store">DAKA</span><h3>{selected.daka.name}</h3><small>SAP {selected.daka.externalId}</small></div><div><strong>{formatPrice(selected.daka.price)}</strong>{selected.daka.previousPrice != null && <small>Precio anterior {money.format(selected.daka.previousPrice)}</small>}<small>{stockLabel(selected.daka)}</small><a href={selected.daka.url} target="_blank" rel="noreferrer">Abrir producto DAKA ↗</a></div></section>

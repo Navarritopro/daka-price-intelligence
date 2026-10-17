@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { caracasToday, shiftIsoDate, type CatalogPeriodMode } from "@/lib/catalog-comparison";
 import { readApiJson } from "@/lib/api-client";
+import { useAccessibleDialog } from "@/hooks/use-accessible-dialog";
 
 type Source = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type ChangeState = "missing" | "confirmed" | "new" | "recovered";
@@ -131,31 +132,13 @@ export default function CatalogChanges() {
 
   const closeDetail = useCallback(() => {
     setSelected(null); setHistory(null);
-    window.setTimeout(() => detailTriggerRef.current?.focus(), 0);
   }, []);
 
   const openDetail = useCallback((item: CatalogItem, trigger: HTMLButtonElement) => {
     detailTriggerRef.current = trigger; setSelected(item);
   }, []);
 
-  useEffect(() => {
-    if (!selected) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeDetail();
-      if (event.key === "Tab" && drawerRef.current) {
-        const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')];
-        if (!focusable.length) return;
-        const first = focusable[0], last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-      }
-    };
-    window.addEventListener("keydown", keydown);
-    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", keydown); };
-  }, [closeDetail, selected]);
+  useAccessibleDialog({ open: Boolean(selected), onClose: closeDetail, dialogRef: drawerRef, initialFocusRef: closeButtonRef, returnFocusRef: detailTriggerRef });
 
   useEffect(() => {
     if (!selected) return;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AvailabilitySource } from "@/components/competitor-availability";
 import { readApiJson } from "@/lib/api-client";
+import { useAccessibleDialog } from "@/hooks/use-accessible-dialog";
 
 type Metric = "products" | "units";
 type HistoryMovement = "up" | "down" | "same" | "restocked" | "out" | "unquantified";
@@ -119,8 +120,6 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
 
   const closeDetail = useCallback(() => {
     setSelected(null);
-    const trigger = detailTriggerRef.current;
-    window.setTimeout(() => trigger?.focus(), 0);
   }, []);
 
   const openDetail = useCallback((item: HistoryItem, trigger: HTMLButtonElement) => {
@@ -128,27 +127,7 @@ export default function AvailabilityHistory({ source }: { source: AvailabilitySo
     setSelected(item);
   }, []);
 
-  useEffect(() => {
-    if (!selected) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeButtonRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeDetail();
-      if (event.key === "Tab" && drawerRef.current) {
-        const focusable = [...drawerRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')];
-        if (!focusable.length) return;
-        const first = focusable[0], last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [closeDetail, selected]);
+  useAccessibleDialog({ open: Boolean(selected), onClose: closeDetail, dialogRef: drawerRef, initialFocusRef: closeButtonRef, returnFocusRef: detailTriggerRef });
 
   const parameters = useCallback((offset: number) => {
     const params = new URLSearchParams({ source, days, search: debouncedSearch, category, brand, movement, limit: String(BATCH_SIZE), offset: String(offset) });

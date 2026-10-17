@@ -6,6 +6,7 @@ import CompetitorAvailability, { type AvailabilitySource } from "@/components/co
 import FilterFeedback, { type ActiveFilter } from "@/components/filter-feedback";
 import type { ProductSummary } from "@/lib/types";
 import { describeCatalogFilters, describePriceChangeFilters } from "@/lib/catalog-filter-state";
+import { allowedQueryValue, mergeQueryString, queryText } from "@/lib/navigation-state";
 
 type CatalogTab = "explore" | "changes" | "availability";
 type PricePoint = {
@@ -128,6 +129,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   const [movementHasMore, setMovementHasMore] = useState(false);
   const [movementLoading, setMovementLoading] = useState(false);
   const [movementLoadingMore, setMovementLoadingMore] = useState(false);
+  const [navigationReady, setNavigationReady] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const productVersion = useRef(0);
   const changeVersion = useRef(0);
@@ -145,6 +147,59 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     setSource(reportComparison.source as CompetitorSource);
     setTab("changes");
   }, [reportComparison]);
+
+  const restoreNavigation = useCallback(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlSource = params.get("source") ?? "";
+    const reportSource = params.get("currentJob") && params.get("previousJob") && Object.prototype.hasOwnProperty.call(SOURCES, urlSource)
+      ? urlSource as CompetitorSource
+      : "damasco";
+    setSource(allowedQueryValue(params, "competitor", Object.keys(SOURCES) as CompetitorSource[], reportSource));
+    const reportMode = Boolean(params.get("currentJob") && params.get("previousJob") && urlSource !== "daka" && Object.prototype.hasOwnProperty.call(SOURCES, urlSource));
+    const restoredTab = allowedQueryValue(params, "competitorTab", ["explore", "changes", "availability"] as const, reportMode ? "changes" : "explore");
+    setTab(restoredTab);
+    const restoredHistory = params.get("competitorHistory") === "product";
+    setHistoryMode(restoredHistory && restoredTab === "explore");
+    setSearch(queryText(params, "competitorSearch"));
+    setDebouncedSearch(queryText(params, "competitorSearch"));
+    setBrand(queryText(params, "competitorBrand", 80));
+    setCategory(queryText(params, "competitorCategory", 100));
+    setStatus(restoredHistory ? "all" : allowedQueryValue(params, "competitorStatus", ["current", "missing", "all"] as const, "current"));
+    setStock(allowedQueryValue(params, "competitorStock", ["all", "in", "out"] as const, "all"));
+    setChange(allowedQueryValue(params, "competitorVariation", ["all", "down", "up", "same"] as const, "all"));
+    setDays(allowedQueryValue(params, "competitorDays", ["1", "7", "30", "90", "all"] as const, "30"));
+    setMovement(allowedQueryValue(params, "competitorMovement", ["all", "down", "up"] as const, "all"));
+    setThreshold(allowedQueryValue(params, "competitorThreshold", ["0", "5", "10", "20"] as const, "0"));
+    setChangeStatus(allowedQueryValue(params, "competitorChangeStatus", ["current", "missing", "all"] as const, "current"));
+    setNavigationReady(true);
+  }, []);
+
+  useEffect(() => {
+    restoreNavigation();
+    window.addEventListener("popstate", restoreNavigation);
+    return () => window.removeEventListener("popstate", restoreNavigation);
+  }, [restoreNavigation]);
+
+  useEffect(() => {
+    if (!navigationReady) return;
+    const searchString = mergeQueryString(window.location.search, {
+      competitor: source === "damasco" ? null : source,
+      competitorTab: tab === "explore" ? null : tab,
+      competitorHistory: tab === "explore" && historyMode ? "product" : null,
+      competitorSearch: search.trim(),
+      competitorBrand: brand,
+      competitorCategory: tab === "explore" && !historyMode ? category : null,
+      competitorStatus: tab === "explore" && !historyMode && status !== "current" ? status : null,
+      competitorStock: tab === "explore" && !historyMode && stock !== "all" ? stock : null,
+      competitorVariation: tab === "explore" && change !== "all" ? change : null,
+      competitorDays: tab === "changes" && days !== "30" ? days : null,
+      competitorMovement: tab === "changes" && movement !== "all" ? movement : null,
+      competitorThreshold: tab === "changes" && threshold !== "0" ? threshold : null,
+      competitorChangeStatus: tab === "changes" && changeStatus !== "current" ? changeStatus : null,
+      competitorProduct: selected ? selected.id : null
+    });
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${searchString}${window.location.hash}`);
+  }, [brand, category, change, changeStatus, days, historyMode, movement, navigationReady, search, selected, source, status, stock, tab, threshold]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -179,7 +234,8 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       .then((page) => {
         if (version !== productVersion.current) return;
         setProducts(page.items); setProductTotal(page.total); setProductHasMore(page.hasMore);
-        setSelected(page.items[0] ?? null);
+        const requestedProductId = Number(new URLSearchParams(window.location.search).get("competitorProduct"));
+        setSelected(page.items.find((item) => item.id === requestedProductId) ?? page.items[0] ?? null);
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -255,7 +311,9 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       .then((page) => {
         if (version !== changeVersion.current) return;
         setChangeProducts(page.items); setChangeTotal(page.total); setChangeHasMore(page.hasMore);
-        setChangeStats(page.stats); setSelected(page.items[0] ?? null);
+        setChangeStats(page.stats);
+        const requestedProductId = Number(new URLSearchParams(window.location.search).get("competitorProduct"));
+        setSelected(page.items.find((item) => item.id === requestedProductId) ?? page.items[0] ?? null);
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -311,7 +369,21 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     if (element.scrollTop + element.clientHeight >= element.scrollHeight - LOAD_THRESHOLD) void loadMoreProducts();
   }
 
+  function pushCompetitorNavigation(changes: Record<string, string | null>) {
+    const searchString = mergeQueryString(window.location.search, changes);
+    window.history.pushState({ ...(window.history.state ?? {}), dakaNavigation: true }, "", `${window.location.pathname}${searchString}${window.location.hash}`);
+  }
+
+  function selectSource(nextSource: CompetitorSource) {
+    pushCompetitorNavigation({ competitor: nextSource === "damasco" ? null : nextSource, competitorProduct: null });
+    resetProductScroll();
+    setSource(nextSource);
+    setCategory("");
+    setBrand("");
+  }
+
   function openCatalog() {
+    pushCompetitorNavigation({ competitorTab: null, competitorHistory: null, competitorProduct: null });
     resetProductScroll();
     setHistoryMode(false);
     setTab("explore");
@@ -319,6 +391,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   }
 
   function openProductHistory(product?: ProductSummary) {
+    pushCompetitorNavigation({ competitorTab: null, competitorHistory: "product", competitorProduct: product ? String(product.id) : null });
     resetProductScroll();
     setHistoryMode(true);
     setTab("explore");
@@ -328,6 +401,18 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
     setCategory("");
     setBrand("");
     if (product) setSearch(product.externalId);
+  }
+
+  function openChanges() {
+    pushCompetitorNavigation({ competitorTab: "changes", competitorHistory: null, competitorProduct: null });
+    setHistoryMode(false);
+    setTab("changes");
+  }
+
+  function openAvailability() {
+    pushCompetitorNavigation({ competitorTab: "availability", competitorHistory: null, competitorProduct: null });
+    setHistoryMode(false);
+    setTab("availability");
   }
 
   function clearCatalogFilters() {
@@ -395,7 +480,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
   }));
 
   return <section className="damasco-catalog">
-    <nav className="competitor-source-tabs" aria-label="Catálogo competidor" data-tour="competitor-source-tabs">{tab === "availability" && <><button className={availabilitySource === "all" ? "active" : ""} onClick={() => setAvailabilitySource("all")}>Todos</button><button className={availabilitySource === "daka" ? "active" : ""} onClick={() => setAvailabilitySource("daka")}>DAKA</button></>}{(Object.entries(SOURCES) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={(tab === "availability" ? availabilitySource : source) === slug ? "active" : ""} onClick={() => { if (tab === "availability") setAvailabilitySource(slug); else { resetProductScroll(); setSource(slug); setCategory(""); setBrand(""); } }}>{item.name}</button>)}</nav>
+    <nav className="competitor-source-tabs" aria-label="Catálogo competidor" data-tour="competitor-source-tabs">{tab === "availability" && <><button className={availabilitySource === "all" ? "active" : ""} onClick={() => setAvailabilitySource("all")}>Todos</button><button className={availabilitySource === "daka" ? "active" : ""} onClick={() => setAvailabilitySource("daka")}>DAKA</button></>}{(Object.entries(SOURCES) as [CompetitorSource, { name: string; short: string }][]).map(([slug, item]) => <button key={slug} className={(tab === "availability" ? availabilitySource : source) === slug ? "active" : ""} onClick={() => { if (tab === "availability") setAvailabilitySource(slug); else selectSource(slug); }}>{item.name}</button>)}</nav>
     {tab !== "availability" && <><div className="damasco-catalog-head"><div><span className="eyebrow-dark">Inteligencia competitiva · Catálogo completo</span><h2>Productos e histórico de {sourceName}</h2><p>Consulta todo el catálogo scrapeado aunque el producto todavía no esté homologado con DAKA.</p></div><div><span>Última captura</span><strong>{formatDate(summary?.lastScrapeAt)}</strong></div></div>
     {summaryError && <div className="error-banner comparison-error" role="alert"><div><strong>Resumen pendiente</strong><span>{summaryError}</span></div><button type="button" onClick={() => setSummaryRefreshToken((current) => current + 1)}>Reintentar</button></div>}
     <div className="damasco-summary">
@@ -405,7 +490,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       <article className="stock-out"><span>Sin stock</span><strong>{summary ? integer.format(summary.productsOutOfStock) : "…"}</strong><small>Última captura</small></article>
       <article><span>Precio promedio</span><strong>{summary ? money.format(summary.averagePrice) : "…"}</strong><small>{integer.format(summary?.productsWithPrice ?? 0)} con precio</small></article>
     </div></>}
-    <div className="source-tabs" data-tour="competitor-subtabs"><button className={tab === "explore" && !historyMode ? "active" : ""} onClick={openCatalog}>Explorar catálogo</button><button className={tab === "changes" ? "active" : ""} onClick={() => { setHistoryMode(false); setTab("changes"); }}>Cambios de precios</button><button className={tab === "explore" && historyMode ? "active" : ""} onClick={() => openProductHistory()}>Histórico por producto</button><button className={tab === "availability" ? "active" : ""} onClick={() => { setHistoryMode(false); setTab("availability"); }}>Cambios de disponibilidad</button></div>
+    <div className="source-tabs" data-tour="competitor-subtabs"><button className={tab === "explore" && !historyMode ? "active" : ""} onClick={openCatalog}>Explorar catálogo</button><button className={tab === "changes" ? "active" : ""} onClick={openChanges}>Cambios de precios</button><button className={tab === "explore" && historyMode ? "active" : ""} onClick={() => openProductHistory()}>Histórico por producto</button><button className={tab === "availability" ? "active" : ""} onClick={openAvailability}>Cambios de disponibilidad</button></div>
     {tab === "explore" ? <>
       {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo de {sourceName}</strong><span>Consulta todas las capturas del producto, incluyendo registros donde el precio no cambió.</span></div><button onClick={openCatalog}>Volver al catálogo actual</button></div>}
       <div className="filters damasco-filters" data-tour="competitor-filters"><input aria-label={`Buscar en ${sourceName}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, referencia, marca o modelo"/><select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{summary?.brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select value={category} disabled={historyMode} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{summary?.categories.map((value) => <option key={value} value={value}>{value}</option>)}</select><select value={status} disabled={historyMode} onChange={(event) => setStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos actualmente</option><option value="all">Todos los históricos</option></select><select value={stock} disabled={historyMode} onChange={(event) => setStock(event.target.value)}><option value="all">Cualquier disponibilidad</option><option value="in">Con stock</option><option value="out">Sin stock</option></select><select value={change} onChange={(event) => setChange(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select></div>

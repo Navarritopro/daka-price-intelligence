@@ -13,6 +13,7 @@ import DakaProductUniverse from "@/components/daka-product-universe";
 import FilterFeedback, { type ActiveFilter } from "@/components/filter-feedback";
 import { readApiJson } from "@/lib/api-client";
 import { describeCatalogFilters, describePriceChangeFilters } from "@/lib/catalog-filter-state";
+import { allowedQueryValue, mergeQueryString, queryText } from "@/lib/navigation-state";
 
 type PricePoint = {
   price: number | null;
@@ -184,6 +185,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reportComparison, setReportComparison] = useState<ReportComparison | null>(null);
+  const [navigationReady, setNavigationReady] = useState(false);
   const productListRef = useRef<HTMLDivElement>(null);
   const productQueryVersion = useRef(0);
   const loadingMoreRef = useRef(false);
@@ -222,19 +224,57 @@ export default function Dashboard() {
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
+  const restoreNavigation = useCallback(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("priceTab") === "opportunities") {
-      setHistoryMode(false);
-      setPriceTab("opportunities");
-    }
+    const restoredView = allowedQueryValue(params, "view", ["prices", "universe", "operations"] as const, "prices");
+    const restoredTab = allowedQueryValue(params, "priceTab", ["explore", "changes", "damasco", "catalogChanges", "competitors", "opportunities"] as const, "explore");
+    const restoredHistory = params.get("history") === "product";
+    setView(restoredView);
+    setPriceTab(restoredTab);
+    setHistoryMode(restoredHistory && restoredTab === "explore");
+    setSearch(queryText(params, "search"));
+    setDebouncedSearch(queryText(params, "search"));
+    setBrandFilter(queryText(params, "brand", 80));
+    setProductStatus(restoredHistory ? "all" : allowedQueryValue(params, "productStatus", ["current", "missing", "all"] as const, "current"));
+    setChangeFilter(allowedQueryValue(params, "variation", ["all", "down", "up", "same"] as const, "all"));
+    setChangeDays(allowedQueryValue(params, "days", ["1", "7", "30", "90", "all"] as const, "30"));
+    setChangeMovement(allowedQueryValue(params, "movement", ["all", "down", "up"] as const, "all"));
+    setChangeThreshold(allowedQueryValue(params, "threshold", ["0", "5", "10", "20"] as const, "0"));
+    setChangeStatus(allowedQueryValue(params, "changeStatus", ["current", "missing", "all"] as const, "current"));
     const source = params.get("source") ?? "";
     const currentJob = params.get("currentJob") ?? "";
     const previousJob = params.get("previousJob") ?? "";
-    if (!currentJob || !previousJob || !["daka", "damasco", "multimax", "ivoo", "venelectronics", "soytechno"].includes(source)) return;
-    setReportComparison({ source, currentJob, previousJob });
-    setPriceTab(source === "daka" ? "changes" : "damasco");
+    if (currentJob && previousJob && ["daka", "damasco", "multimax", "ivoo", "venelectronics", "soytechno"].includes(source)) {
+      setReportComparison({ source, currentJob, previousJob });
+      setPriceTab(source === "daka" ? "changes" : "damasco");
+    } else setReportComparison(null);
+    setNavigationReady(true);
   }, []);
+
+  useEffect(() => {
+    restoreNavigation();
+    window.addEventListener("popstate", restoreNavigation);
+    return () => window.removeEventListener("popstate", restoreNavigation);
+  }, [restoreNavigation]);
+
+  useEffect(() => {
+    if (!navigationReady) return;
+    const searchString = mergeQueryString(window.location.search, {
+      view: view === "prices" ? null : view,
+      priceTab: view === "prices" && priceTab !== "explore" ? priceTab : null,
+      history: view === "prices" && priceTab === "explore" && historyMode ? "product" : null,
+      search: view === "prices" && (priceTab === "explore" || priceTab === "changes") ? search.trim() : null,
+      brand: view === "prices" && (priceTab === "explore" || priceTab === "changes") ? brandFilter : null,
+      productStatus: view === "prices" && priceTab === "explore" && !historyMode && productStatus !== "current" ? productStatus : null,
+      variation: view === "prices" && priceTab === "explore" && changeFilter !== "all" ? changeFilter : null,
+      days: view === "prices" && priceTab === "changes" && changeDays !== "30" ? changeDays : null,
+      movement: view === "prices" && priceTab === "changes" && changeMovement !== "all" ? changeMovement : null,
+      threshold: view === "prices" && priceTab === "changes" && changeThreshold !== "0" ? changeThreshold : null,
+      changeStatus: view === "prices" && priceTab === "changes" && changeStatus !== "current" ? changeStatus : null,
+      product: view === "prices" && (priceTab === "explore" || priceTab === "changes") && selected ? selected.id : null
+    });
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${searchString}${window.location.hash}`);
+  }, [brandFilter, changeDays, changeFilter, changeMovement, changeStatus, changeThreshold, historyMode, navigationReady, priceTab, productStatus, search, selected, view]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -270,7 +310,8 @@ export default function Dashboard() {
         setTotalProducts(page.total);
         setHasMoreProducts(page.hasMore);
         setBrands(page.brands ?? []);
-        setSelected(page.items[0] ?? null);
+        const requestedProductId = Number(new URLSearchParams(window.location.search).get("product"));
+        setSelected(page.items.find((item) => item.id === requestedProductId) ?? page.items[0] ?? null);
       })
       .catch((requestError) => {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;
@@ -352,7 +393,8 @@ export default function Dashboard() {
         setHasMoreChanges(page.hasMore);
         setChangeStats(page.stats);
         setBrands(page.brands ?? []);
-        setSelected(page.items[0] ?? null);
+        const requestedProductId = Number(new URLSearchParams(window.location.search).get("product"));
+        setSelected(page.items.find((item) => item.id === requestedProductId) ?? page.items[0] ?? null);
       })
       .catch((requestError) => {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;
@@ -525,7 +567,51 @@ export default function Dashboard() {
     }
   }
 
+  function pushNavigation(changes: Record<string, string | null>) {
+    const searchString = mergeQueryString(window.location.search, changes);
+    window.history.pushState({ ...(window.history.state ?? {}), dakaNavigation: true }, "", `${window.location.pathname}${searchString}${window.location.hash}`);
+  }
+
+  function returnToPreviousView() {
+    if (window.history.state?.dakaNavigation) {
+      window.history.back();
+      return;
+    }
+    const searchString = mergeQueryString(window.location.search, {
+      view: null, priceTab: null, history: null, product: null,
+      search: null, brand: null, productStatus: null, variation: null,
+      days: null, movement: null, threshold: null, changeStatus: null
+    });
+    window.history.replaceState(window.history.state, "", `${window.location.pathname}${searchString}${window.location.hash}`);
+    setView("prices");
+    setPriceTab("explore");
+    setHistoryMode(false);
+    setSearch("");
+    setDebouncedSearch("");
+    setBrandFilter("");
+    setProductStatus("current");
+    setChangeFilter("all");
+    setChangeDays("30");
+    setChangeMovement("all");
+    setChangeThreshold("0");
+    setChangeStatus("current");
+    setSelected(null);
+  }
+
+  function navigateToView(nextView: View) {
+    pushNavigation({ view: nextView === "prices" ? null : nextView });
+    setView(nextView);
+  }
+
+  function navigateToPriceTab(nextTab: PriceTab) {
+    pushNavigation({ view: null, priceTab: nextTab === "explore" ? null : nextTab, history: null, product: null });
+    setView("prices");
+    setHistoryMode(false);
+    setPriceTab(nextTab);
+  }
+
   function openExplorePrices() {
+    pushNavigation({ view: null, priceTab: null, history: null, product: null });
     resetProductScroll();
     setHistoryMode(false);
     setPriceTab("explore");
@@ -533,6 +619,7 @@ export default function Dashboard() {
   }
 
   function openProductHistory(product?: ProductSummary) {
+    pushNavigation({ view: null, priceTab: null, history: "product", product: product ? String(product.id) : null });
     resetProductScroll();
     setHistoryMode(true);
     setPriceTab("explore");
@@ -577,7 +664,7 @@ export default function Dashboard() {
         finishedAt: null,
         errorMessage: null
       });
-      setView("operations");
+      navigateToView("operations");
       setNotice("Solicitud registrada. El equipo ejecutor local la iniciará en un máximo de dos minutos.");
       setTimeout(() => void load(), 6000);
     } catch (requestError) {
@@ -646,31 +733,30 @@ export default function Dashboard() {
     }
   }));
 
-  const navigateFromOnboarding = useCallback((target: OnboardingNavigationTarget) => {
+  function navigateFromOnboarding(target: OnboardingNavigationTarget) {
     setHistoryMode(false);
     if (target === "monitoring") {
-      setView("operations");
+      navigateToView("operations");
       return;
     }
     if (target === "universe") {
-      setView("universe");
+      navigateToView("universe");
       return;
     }
-    setView("prices");
     if (target === "explore") {
-      setPriceTab("explore");
+      navigateToPriceTab("explore");
       setProductStatus("current");
       resetProductScroll();
     } else if (target === "competitors") {
-      setPriceTab("damasco");
+      navigateToPriceTab("damasco");
     } else if (target === "catalogChanges") {
-      setPriceTab("catalogChanges");
+      navigateToPriceTab("catalogChanges");
     } else if (target === "comparison") {
-      setPriceTab("competitors");
+      navigateToPriceTab("competitors");
     } else {
-      setPriceTab("opportunities");
+      navigateToPriceTab("opportunities");
     }
-  }, [resetProductScroll]);
+  }
 
   return (
     <div className="app-wrap">
@@ -678,9 +764,9 @@ export default function Dashboard() {
       <header className="app-header">
         <div className="brand">DAKA <span>PRICE LAB</span></div>
         <nav className="module-nav" aria-label="Módulos principales" data-tour="module-nav">
-          <button className={view === "prices" ? "module-button active" : "module-button"} onClick={() => setView("prices")}>Inteligencia de precios</button>
-          <button className={view === "universe" ? "module-button active" : "module-button"} onClick={() => setView("universe")}>Universo de Productos Daka</button>
-          <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => setView("operations")}>Monitoreo técnico</button>
+          <button className={view === "prices" ? "module-button active" : "module-button"} onClick={() => navigateToView("prices")}>Inteligencia de precios</button>
+          <button className={view === "universe" ? "module-button active" : "module-button"} onClick={() => navigateToView("universe")}>Universo de Productos Daka</button>
+          <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => navigateToView("operations")}>Monitoreo técnico</button>
         </nav>
         <div className="header-actions">
           <span className="next-run">Competidores · 09:07–09:33 AM VET</span>
@@ -691,6 +777,7 @@ export default function Dashboard() {
       </header>
 
       {error && <div className="error-banner"><strong>Conexión pendiente</strong><span>{error}</span><button onClick={() => void load()}>Reintentar</button></div>}
+      {(view !== "prices" || priceTab !== "explore" || historyMode) && <div className="context-back-row"><button type="button" onClick={returnToPreviousView}>← Volver a la vista anterior</button></div>}
 
       {view === "prices" ? (
         <main>
@@ -704,7 +791,7 @@ export default function Dashboard() {
             </div>
           </section>
 
-          <div className="tabs" data-tour="intelligence-tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("changes"); }}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("damasco"); }}>Catálogos competencia</button><button className={priceTab === "catalogChanges" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("catalogChanges"); }}>Cambios de catálogo</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("competitors"); }}>Comparador</button><button className={priceTab === "opportunities" ? "tab active" : "tab"} onClick={() => { setHistoryMode(false); setPriceTab("opportunities"); }}>Oportunidades comerciales</button></div>
+          <div className="tabs" data-tour="intelligence-tabs"><button className={priceTab === "explore" && !historyMode ? "tab active" : "tab"} onClick={openExplorePrices}>Explorar precios</button><button className={priceTab === "changes" ? "tab active" : "tab"} onClick={() => navigateToPriceTab("changes")}>Cambios de precios</button><button className={priceTab === "explore" && historyMode ? "tab active" : "tab"} onClick={() => openProductHistory()}>Histórico por producto</button><button className={priceTab === "damasco" ? "tab active" : "tab"} onClick={() => navigateToPriceTab("damasco")}>Catálogos competencia</button><button className={priceTab === "catalogChanges" ? "tab active" : "tab"} onClick={() => navigateToPriceTab("catalogChanges")}>Cambios de catálogo</button><button className={priceTab === "competitors" ? "tab active" : "tab"} onClick={() => navigateToPriceTab("competitors")}>Comparador</button><button className={priceTab === "opportunities" ? "tab active" : "tab"} onClick={() => navigateToPriceTab("opportunities")}>Oportunidades comerciales</button></div>
           {priceTab === "explore" ? <>
           {historyMode && <div className="history-mode-banner"><div><strong>Histórico completo por producto</strong><span>Selecciona un producto para consultar todas sus capturas, incluyendo los registros donde el precio no cambió.</span></div><button onClick={openExplorePrices}>Volver al catálogo actual</button></div>}
           <section className="filters" data-tour="catalog-filters"><input aria-label="Buscar producto" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto o código SAP"/><select aria-label="Marca" value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select><select aria-label="Estado del producto" value={productStatus} disabled={historyMode} onChange={(event) => setProductStatus(event.target.value)}><option value="current">Vigentes en última captura</option><option value="missing">No vistos en última captura</option><option value="all">Todos los históricos</option></select><select aria-label="Variación" value={changeFilter} onChange={(event) => setChangeFilter(event.target.value)}><option value="all">Cualquier variación</option><option value="down">Rebajas</option><option value="up">Aumentos</option><option value="same">Sin cambios</option></select><select aria-label="Período" disabled><option>{historyMode ? "Todas las capturas guardadas" : "Últimos 90 días"}</option></select></section>

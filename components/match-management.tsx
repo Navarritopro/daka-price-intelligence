@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MATCH_CORRECTION_REASON_LABELS, type MatchCorrectionReason, type MatchManagementAction } from "@/lib/match-management";
 import { readApiJson } from "@/lib/api-client";
+import { useAccessibleDialog } from "@/hooks/use-accessible-dialog";
 
 type Product = { id: number; externalId: string; name: string; brand: string | null; model: string | null; category: string | null; url: string; price: number | null; inStock: boolean | null };
 type Audit = { action: "deactivated" | "replaced" | "restored"; reason: MatchCorrectionReason; notes: string | null; actor: string | null; createdAt: string };
@@ -50,6 +51,11 @@ export default function MatchManagement({ source, competitorName, onBack, onChan
   const [selectedCandidate, setSelectedCandidate] = useState<Product | null>(null);
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const dialogCloseRef = useRef<HTMLButtonElement | null>(null);
+
+  const closeDialog = useCallback(() => { if (!saving) setDialog(null); }, [saving]);
+  useAccessibleDialog({ open: Boolean(dialog), onClose: closeDialog, dialogRef, initialFocusRef: dialogCloseRef, canClose: !saving });
 
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 350); return () => window.clearTimeout(timer); }, [search]);
   useEffect(() => { const timer = window.setTimeout(() => setDebouncedCandidateSearch(candidateSearch.trim()), 350); return () => window.clearTimeout(timer); }, [candidateSearch]);
@@ -123,13 +129,13 @@ export default function MatchManagement({ source, competitorName, onBack, onChan
     </article>)}</div>}
     {total > PAGE_SIZE && <div className="management-pagination"><button disabled={page === 0} onClick={() => setPage((value) => Math.max(0, value - 1))}>Anterior</button><span>Página {page + 1} de {pages}</span><button disabled={page + 1 >= pages} onClick={() => setPage((value) => value + 1)}>Siguiente</button></div>}
 
-    {dialog && <div className="match-action-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDialog(null); }}><aside className="match-action-drawer" role="dialog" aria-modal="true" aria-labelledby="match-action-title">
-      <div className="drawer-head"><div><span className="eyebrow-dark">Acción administrativa</span><h2 id="match-action-title">{dialog.action === "replace" ? "Corregir comparación" : dialog.action === "deactivate" ? "Desactivar homologación" : "Restaurar homologación"}</h2></div><button aria-label="Cerrar" disabled={saving} onClick={() => setDialog(null)}>×</button></div>
+    {dialog && <div className="match-action-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}><aside ref={dialogRef} tabIndex={-1} className="match-action-drawer" role="dialog" aria-modal="true" aria-labelledby="match-action-title">
+      <div className="drawer-head"><div><span className="eyebrow-dark">Acción administrativa</span><h2 id="match-action-title">{dialog.action === "replace" ? "Corregir comparación" : dialog.action === "deactivate" ? "Desactivar homologación" : "Restaurar homologación"}</h2></div><button ref={dialogCloseRef} aria-label="Cerrar" disabled={saving} onClick={closeDialog}>×</button></div>
       <div className="drawer-current"><span>Producto DAKA</span><strong>{dialog.match.daka.name}</strong><small>SAP {dialog.match.daka.externalId}</small><span>Comparado actualmente con</span><strong>{dialog.match.competitor.name}</strong><small>Ref. {dialog.match.competitor.externalId}</small></div>
       {dialog.action === "replace" && <div className="candidate-picker"><label htmlFor="candidate-search">Selecciona el producto correcto de {competitorName}</label><input id="candidate-search" value={candidateSearch} onChange={(event) => setCandidateSearch(event.target.value)} placeholder="Buscar por nombre, marca, modelo o referencia"/>{candidateLoading ? <div className="empty-state">Buscando candidatos…</div> : candidates.length === 0 ? <div className="empty-state">No hay candidatos disponibles con esta búsqueda.</div> : <div className="candidate-list">{candidates.map((candidate) => <button type="button" key={candidate.id} className={selectedCandidate?.id === candidate.id ? "selected" : ""} onClick={() => setSelectedCandidate(candidate)}><span><strong>{candidate.name}</strong><small>Ref. {candidate.externalId}{candidate.brand ? ` · ${candidate.brand}` : ""}</small></span><b>{candidate.price == null ? "Sin precio" : money.format(candidate.price)}</b></button>)}</div>}</div>}
       <label htmlFor="correction-reason">Motivo obligatorio</label><select id="correction-reason" value={reason} disabled={dialog.action === "restore"} onChange={(event) => setReason(event.target.value as MatchCorrectionReason)}><option value="">Selecciona un motivo</option>{Object.entries(MATCH_CORRECTION_REASON_LABELS).filter(([key]) => dialog.action === "restore" ? key === "restore_previous" : key !== "restore_previous").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
       <label htmlFor="correction-notes">Observación opcional</label><textarea id="correction-notes" maxLength={500} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Agrega contexto para la auditoría"/><small>{notes.length}/500 caracteres</small>
-      <div className="drawer-actions"><button className="secondary-button" disabled={saving} onClick={() => setDialog(null)}>Cancelar</button><button className={dialog.action === "deactivate" ? "danger-button" : "primary-button"} disabled={saving || !reason || (dialog.action === "replace" && !selectedCandidate)} onClick={() => void submit()}>{saving ? "Guardando…" : dialog.action === "replace" ? "Guardar corrección" : dialog.action === "deactivate" ? "Desactivar" : "Restaurar"}</button></div>
+      <div className="drawer-actions"><button className="secondary-button" disabled={saving} onClick={closeDialog}>Cancelar</button><button className={dialog.action === "deactivate" ? "danger-button" : "primary-button"} disabled={saving || !reason || (dialog.action === "replace" && !selectedCandidate)} onClick={() => void submit()}>{saving ? "Guardando…" : dialog.action === "replace" ? "Guardar corrección" : dialog.action === "deactivate" ? "Desactivar" : "Restaurar"}</button></div>
     </aside></div>}
   </section>;
 }

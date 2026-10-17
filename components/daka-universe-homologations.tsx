@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { readApiJson } from "@/lib/api-client";
+import { useAccessibleDialog } from "@/hooks/use-accessible-dialog";
 
 const SOURCE_META = {
   damasco: { name: "Damasco", color: "#B53112" },
@@ -146,6 +147,11 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
   const [refresh, setRefresh] = useState(0);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const scrollToTableStartAfterLoadRef = useRef(false);
+  const editorRef = useRef<HTMLElement | null>(null);
+  const editorCloseRef = useRef<HTMLButtonElement | null>(null);
+
+  const closeEditor = useCallback(() => { if (!saving) setEditor(null); }, [saving]);
+  useAccessibleDialog({ open: Boolean(editor), onClose: closeEditor, dialogRef: editorRef, initialFocusRef: editorCloseRef, canClose: !saving });
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -359,9 +365,9 @@ export default function DakaUniverseHomologations({ canAdmin }: { canAdmin: bool
       <div className="management-pagination"><button disabled={loading || page === 0} onClick={() => changePage(page - 1)}>Anterior</button><span aria-live="polite" aria-atomic="true">{loading ? `Cargando página ${page + 1}…` : `Página ${page + 1} de ${pages}`}</span><button disabled={loading || page + 1 >= pages} onClick={() => changePage(page + 1)}>Siguiente</button></div>
     </article>
 
-    {editor && <div className="universe-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setEditor(null); }}>
-      <aside className="universe-drawer universe-match-drawer centralized" role="dialog" aria-modal="true" aria-label={`Gestionar homologaciones de ${editor.row.description}`}>
-        <header><div><span className="eyebrow-dark">Gestión competitiva · {decisionCount(editor.row)}/5 definidos</span><h2>{editor.row.description}</h2><small>{editor.row.sku} · {editor.row.brand} · Precio Daka {editor.row.price == null ? "no disponible" : money.format(editor.row.price)}</small></div><button aria-label="Cerrar" disabled={saving} onClick={() => setEditor(null)}>×</button></header>
+    {editor && <div className="universe-drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}>
+      <aside ref={editorRef} tabIndex={-1} className="universe-drawer universe-match-drawer centralized" role="dialog" aria-modal="true" aria-label={`Gestionar homologaciones de ${editor.row.description}`}>
+        <header><div><span className="eyebrow-dark">Gestión competitiva · {decisionCount(editor.row)}/5 definidos</span><h2>{editor.row.description}</h2><small>{editor.row.sku} · {editor.row.brand} · Precio Daka {editor.row.price == null ? "no disponible" : money.format(editor.row.price)}</small></div><button ref={editorCloseRef} aria-label="Cerrar" disabled={saving} onClick={closeEditor}>×</button></header>
         <nav className="match-source-tabs" aria-label="Competidores">{SOURCE_KEYS.map((source) => {
           const match = editor.row.matches[source];
           return <button key={source} className={editor.source === source ? "active" : ""} style={{ "--source-color": SOURCE_META[source].color } as CSSProperties} onClick={() => resetEditorForm(editor.row, source)}><span>{SOURCE_META[source].name}</span><small>{match?.status === "no_applicable" ? "No aplica" : match?.product ? "Definido" : "Pendiente"}</small></button>;
