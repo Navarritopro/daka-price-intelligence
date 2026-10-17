@@ -223,3 +223,22 @@
 @media(max-width:1280px){.compact-matrix table{min-width:1120px}.compact-matrix col.daka-column{width:23%}.compact-matrix col.competitor-column{width:15.4%}.compact-matrix th,.compact-matrix td{padding:7px}.compact-matrix .matrix-scroll{max-height:calc(100vh - 235px)}}
 @media(max-width:900px){.compact-matrix table{min-width:1120px}.matrix-toolbar{align-items:flex-start!important;flex-wrap:wrap}.matrix-toolbar>div:first-child{flex:1 1 100%}.universe-match-drawer.centralized{width:100%}.match-source-tabs{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:600px){.compact-matrix .matrix-scroll{min-height:360px;max-height:calc(100vh - 220px)}.matrix-toolbar>label{min-width:0;flex:1}.match-source-tabs{grid-template-columns:1fr 1fr;padding:8px}.universe-match-drawer.centralized>header{padding-bottom:14px}.candidate-results-grid>article{grid-template-columns:1fr}.candidate-card-actions{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;min-width:0;text-align:left}.candidate-card-actions>button{margin-left:auto}}
+
+/* Bloque 4B: accesibilidad de catálogos e históricos */
+.price-intelligence .tabs,.damasco-catalog .competitor-source-tabs,.damasco-catalog .source-tabs{max-width:100%;overflow-x:auto;scrollbar-gutter:stable}
+.price-intelligence [role="tab"],.damasco-catalog [role="tab"]{min-height:44px;white-space:nowrap}
+.price-intelligence :is(button,input,select,a,[tabindex]):focus-visible,.damasco-catalog :is(button,input,select,a,[tabindex]):focus-visible{outline:3px solid #1261d8;outline-offset:2px}
+.accessible-filter-field{display:grid;align-content:start;gap:5px;min-width:0}
+.accessible-filter-field>span{color:#40556e;font-size:.68rem;font-weight:850;line-height:1.25}
+.filters .accessible-filter-field input,.filters .accessible-filter-field select{width:100%;min-height:44px}
+.price-intelligence .product-row,.damasco-catalog .product-row{min-height:72px}
+.price-intelligence .product-row[aria-pressed="true"],.damasco-catalog .product-row[aria-pressed="true"]{box-shadow:inset 4px 0 #1258d9}
+.changes-table tbody tr[tabindex="0"]{cursor:pointer}
+.changes-table tbody tr[aria-current="true"]{box-shadow:inset 4px 0 #1258d9}
+.movement-indicator{display:block;width:max-content;margin-bottom:4px;padding:2px 6px;border-radius:999px;font-size:.62rem;font-weight:900;line-height:1.35}
+.movement-indicator.negative{background:#e3f7ee;color:#086a4b}.movement-indicator.positive{background:#ffebe7;color:#9a2f1c}.movement-indicator.neutral{background:#edf1f5;color:#526477}
+.price-intelligence .table-scroll[tabindex="0"],.damasco-catalog .table-scroll[tabindex="0"]{scrollbar-gutter:stable}
+.price-intelligence table th,.damasco-catalog table th{font-size:.7rem;line-height:1.35}.price-intelligence table td,.damasco-catalog table td{font-size:.72rem;line-height:1.4}
+@media(max-width:700px){.price-intelligence .filters,.damasco-catalog .filters{grid-template-columns:1fr}.price-intelligence .tabs,.damasco-catalog .competitor-source-tabs,.damasco-catalog .source-tabs{padding-bottom:5px}.price-intelligence [role="tab"],.damasco-catalog [role="tab"]{flex:0 0 auto}}
+@media(prefers-reduced-motion:reduce){.price-intelligence *,.damasco-catalog *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
+@media(forced-colors:active){.price-intelligence [role="tab"][aria-selected="true"],.damasco-catalog [role="tab"][aria-selected="true"],.product-row[aria-pressed="true"],.changes-table tr[aria-current="true"]{border:2px solid Highlight}.movement-indicator{border:1px solid CanvasText}}
