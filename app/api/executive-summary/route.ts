@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { asNumber, getSql } from "@/lib/db";
 import { buildExecutivePosition, type ExecutiveSource, type PairSnapshot, type SourceSnapshot } from "@/lib/executive-summary";
 
@@ -18,19 +18,12 @@ function safeUrl(value: unknown): string {
   } catch { return ""; }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const sql = getSql();
+    const section = request.nextUrl.searchParams.get("section");
     const [sourceRows, pairRows] = await Promise.all([
-      sql`
-        WITH ranked_jobs AS (
-          SELECT j.id, j.source_id, COALESCE(j.finished_at, j.started_at) AS captured_at,
-            ROW_NUMBER() OVER (PARTITION BY j.source_id ORDER BY j.started_at DESC) AS position
-          FROM scraping_jobs j JOIN sources s ON s.id = j.source_id
-          WHERE j.status = 'success' AND s.active = TRUE
-            AND s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
-        ), current_jobs AS (SELECT * FROM ranked_jobs WHERE position = 1),
-        previous_jobs AS (SELECT * FROM ranked_jobs WHERE position = 2)
+      section === "position" ? Promise.resolve([]) : sql`
         SELECT s.slug, s.name, current_job.captured_at AS current_at,
           previous_job.captured_at AS previous_at,
           COUNT(ph.product_id)::int AS captured,
@@ -43,8 +36,16 @@ export async function GET() {
           COUNT(*) FILTER (WHERE ph.price_usd = old.price_usd AND ph.price_usd > 0)::int AS unchanged,
           COUNT(*) FILTER (WHERE ph.price_usd > 0 AND old.price_usd > 0)::int AS compared
         FROM sources s
-        LEFT JOIN current_jobs current_job ON current_job.source_id = s.id
-        LEFT JOIN previous_jobs previous_job ON previous_job.source_id = s.id
+        LEFT JOIN LATERAL (
+          SELECT j.id, COALESCE(j.finished_at, j.started_at) AS captured_at
+          FROM scraping_jobs j WHERE j.source_id = s.id AND j.status = 'success'
+          ORDER BY j.started_at DESC LIMIT 1
+        ) current_job ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT j.id, COALESCE(j.finished_at, j.started_at) AS captured_at
+          FROM scraping_jobs j WHERE j.source_id = s.id AND j.status = 'success'
+          ORDER BY j.started_at DESC LIMIT 1 OFFSET 1
+        ) previous_job ON TRUE
         LEFT JOIN price_history ph ON ph.job_id = current_job.id
         LEFT JOIN price_history old ON old.job_id = previous_job.id AND old.product_id = ph.product_id
         WHERE s.active = TRUE AND s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
@@ -53,12 +54,16 @@ export async function GET() {
           WHEN 'daka' THEN 1 WHEN 'damasco' THEN 2 WHEN 'multimax' THEN 3
           WHEN 'ivoo' THEN 4 WHEN 'venelectronics' THEN 5 ELSE 6 END
       `,
-      sql`
+      section === "activity" ? Promise.resolve([]) : sql`
         WITH latest_jobs AS (
-          SELECT DISTINCT ON (source_id) id, source_id,
-            COALESCE(finished_at, started_at) AS captured_at
-          FROM scraping_jobs WHERE status = 'success'
-          ORDER BY source_id, started_at DESC
+          SELECT j.id, s.id AS source_id, j.captured_at
+          FROM sources s
+          JOIN LATERAL (
+            SELECT id, COALESCE(finished_at, started_at) AS captured_at
+            FROM scraping_jobs WHERE source_id = s.id AND status = 'success'
+            ORDER BY started_at DESC LIMIT 1
+          ) j ON TRUE
+          WHERE s.active = TRUE AND s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
         ), selected_matches AS (
           SELECT DISTINCT ON (pm.daka_product_id, cs.id)
             pm.daka_product_id, pm.competitor_product_id, cs.id AS competitor_source_id

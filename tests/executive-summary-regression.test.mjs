@@ -9,7 +9,9 @@ const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8
 
 test("la portada es aditiva, conserva la vista inicial y la navegación aprobada", () => {
   assert.match(dashboard, /useState<View>\("prices"\)/);
-  assert.match(dashboard, /view === "executive" \? <ExecutiveSummary/);
+  assert.match(dashboard, /view === "executive" \|\| executiveVisited/);
+  assert.match(dashboard, /hidden=\{view !== "executive"\}/);
+  assert.match(dashboard, /if \(restoredView === "executive"\) setExecutiveVisited\(true\)/);
   for (const name of ["Inteligencia de precios", "Universo de Productos Daka", "Monitoreo técnico", "Oportunidades comerciales"]) {
     assert.ok(dashboard.includes(name));
   }
@@ -19,8 +21,8 @@ test("la portada es aditiva, conserva la vista inicial y la navegación aprobada
 test("el endpoint no escribe datos y utiliza dos capturas exitosas por fuente", () => {
   assert.doesNotMatch(route, /\b(?:INSERT|UPDATE|DELETE|TRUNCATE|DROP)\b/i);
   assert.match(route, /j\.status = 'success'/);
-  assert.match(route, /position = 1/);
-  assert.match(route, /position = 2/);
+  assert.match(route, /ORDER BY j\.started_at DESC LIMIT 1/);
+  assert.match(route, /ORDER BY j\.started_at DESC LIMIT 1 OFFSET 1/);
   assert.match(route, /old\.product_id = ph\.product_id/);
   assert.match(route, /old\.price_usd > 0/);
   assert.match(route, /selected_matches/);
@@ -33,8 +35,12 @@ test("los seis orígenes y la calidad existente están presentes", () => {
     assert.ok(route.includes(`'${slug}'`));
   }
   assert.match(view, /apiRequest<DataQualityResponse>\("\/api\/data-quality"/);
-  assert.match(view, /Promise\.allSettled/);
-  assert.match(view, /No se pudo evaluar la calidad/);
+  assert.match(view, /section=activity/);
+  assert.match(view, /section=position/);
+  assert.match(route, /section === "position"/);
+  assert.match(route, /section === "activity"/);
+  assert.doesNotMatch(view, /Promise\.allSettled/);
+  assert.match(view, /No se pudo actualizar la calidad/);
 });
 
 test("los rótulos evitan presentar capturas como variaciones de hoy", () => {

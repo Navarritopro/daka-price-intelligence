@@ -150,6 +150,7 @@ function chartPath(points: PricePoint[]) {
 
 export default function Dashboard() {
   const [view, setView] = useState<View>("prices");
+  const [executiveVisited, setExecutiveVisited] = useState(false);
   const [priceTab, setPriceTab] = useState<PriceTab>("explore");
   const [historyMode, setHistoryMode] = useState(false);
   const [summary, setSummary] = useState<DashboardData | null>(null);
@@ -246,6 +247,7 @@ export default function Dashboard() {
     const restoredTab = allowedQueryValue(params, "priceTab", ["explore", "changes", "damasco", "catalogChanges", "competitors", "opportunities"] as const, "explore");
     const restoredHistory = params.get("history") === "product";
     setView(restoredView);
+    if (restoredView === "executive") setExecutiveVisited(true);
     setPriceTab(restoredTab);
     setHistoryMode(restoredHistory && restoredTab === "explore");
     setSearch(queryText(params, "search"));
@@ -618,6 +620,7 @@ export default function Dashboard() {
 
   function navigateToView(nextView: View) {
     pushNavigation({ view: nextView === "prices" ? null : nextView });
+    if (nextView === "executive") setExecutiveVisited(true);
     setView(nextView);
   }
 
@@ -798,7 +801,8 @@ export default function Dashboard() {
       {error && <div className="error-banner"><strong>Conexión pendiente</strong><span>{error}</span><button onClick={() => void load()}>Reintentar</button></div>}
       {(view !== "prices" || priceTab !== "explore" || historyMode) && <div className="context-back-row"><button type="button" onClick={returnToPreviousView}>← Volver a la vista anterior</button></div>}
 
-      {view === "executive" ? <ExecutiveSummary onOpenMonitoring={() => navigateToView("operations")} onOpenComparison={() => navigateToPriceTab("competitors")} onOpenCatalog={() => navigateToPriceTab("damasco")}/> : view === "prices" ? (
+      {(view === "executive" || executiveVisited) && <div hidden={view !== "executive"}><ExecutiveSummary onOpenMonitoring={() => navigateToView("operations")} onOpenComparison={() => navigateToPriceTab("competitors")} onOpenCatalog={() => navigateToPriceTab("damasco")}/></div>}
+      {view === "executive" ? null : view === "prices" ? (
         <main className="price-intelligence">
           <section className="hero-grid" data-tour="dashboard-summary">
             <article className="intro-card"><div className="eyebrow">Inteligencia de precios · Fases 1 y 2</div><h1>El mercado y el histórico de DAKA, en una sola vista.</h1><p>Seguimiento diario en USD, variaciones históricas y comparación competitiva con homologación auditable.</p></article>
