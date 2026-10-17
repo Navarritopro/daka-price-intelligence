@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { JobSummary, MonitoringSourceSummary } from "@/lib/types";
+import DataQualityCenter from "@/components/data-quality-center";
 
 type MonitoringSource = "all" | "daka" | "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type ScrapeRequest = {
@@ -207,6 +208,7 @@ export default function TechnicalMonitoring({
   onTriggerDaka: () => void;
   onSendTelegramReport: () => void;
 }) {
+  const [monitorView, setMonitorView] = useState<"operation" | "quality">("operation");
   const [selectedSource, setSelectedSource] = useState<MonitoringSource>("all");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -259,7 +261,7 @@ export default function TechnicalMonitoring({
           <h1>Monitoreo técnico</h1>
           <p>Seguimiento multifuente de extracción, persistencia, homologación y calidad del catálogo.</p>
         </div>
-        {selectedSource === "all" && canAdmin ? (
+        {monitorView === "operation" && (selectedSource === "all" && canAdmin ? (
           <button className="primary-button operations-run" onClick={onSendTelegramReport} disabled={reportSending}>✉ {reportSending ? "Solicitando reporte…" : "Enviar resumen por Telegram"}</button>
         ) : selectedSource === "daka" && canAdmin ? (
           <button className="primary-button operations-run" onClick={onTriggerDaka} disabled={executionBusy}>▶ {executionBusy ? "Ejecución pendiente" : "Iniciar DAKA manualmente"}</button>
@@ -267,9 +269,17 @@ export default function TechnicalMonitoring({
           <span className="primary-button operations-link">PC local · tarea programada</span>
         ) : isCompetitor ? (
           <a className="primary-button operations-link" href={`https://github.com/Navarritopro/daka-price-intelligence/actions/workflows/scrape-${selectedSource}.yml`} target="_blank" rel="noreferrer">Abrir GitHub Actions ↗</a>
-        ) : null}
+        ) : null)}
       </section>
 
+      <nav className="monitor-view-tabs" aria-label="Secciones del monitoreo">
+        <button type="button" className={monitorView === "operation" ? "active" : ""} aria-current={monitorView === "operation" ? "page" : undefined} onClick={() => setMonitorView("operation")}>Operación</button>
+        <button type="button" className={monitorView === "quality" ? "active" : ""} aria-current={monitorView === "quality" ? "page" : undefined} onClick={() => setMonitorView("quality")}>Calidad y cobertura</button>
+      </nav>
+
+      {monitorView === "quality" ? (
+        <DataQualityCenter onOpenSource={(source) => { setSelectedSource(source); setMonitorView("operation"); }} />
+      ) : <>
       <nav className="monitor-source-tabs" aria-label="Fuentes del monitoreo" data-tour="monitoring-source-tabs">
         <button className={selectedSource === "all" ? "active" : ""} onClick={() => setSelectedSource("all")}>Resumen general</button>
         <button className={selectedSource === "daka" ? "active" : ""} onClick={() => setSelectedSource("daka")}>DAKA</button>
@@ -327,6 +337,7 @@ export default function TechnicalMonitoring({
           <section className="operations-lower"><article className="operations-panel"><div className="operations-head"><h2>Historial de {sourceName(selectedSource)}</h2><small>Últimos 20 procesos</small></div><div className="table-scroll"><table className="operations-table"><thead><tr><th>Job</th><th>Inicio real</th><th>Finalización</th><th>Origen</th><th>Productos</th><th>Duración</th><th>Resultado</th></tr></thead><tbody>{selectedJobs.map((job) => <tr key={job.id}><td>{job.id.slice(0, 13)}</td><td>{formatDate(job.startedAt)}</td><td>{formatDate(job.finishedAt)}</td><td>{job.triggerType}</td><td>{integer.format(job.productsSaved)}</td><td>{formatDuration(job.durationSeconds)}</td><td><span className={`job-badge ${job.status}`}>{statusText(job.status)}</span></td></tr>)}</tbody></table></div></article><article className="operations-panel"><div className="operations-head"><h2>Configuración y calidad</h2><small>{sourceName(selectedSource)}</small></div><div className="operations-config"><div><span>Fuente</span><b>{selectedSummary?.sourceName ?? sourceName(selectedSource)}</b></div><div><span>Programación</span><b>{schedule?.time}</b></div><div><span>Ejecución</span><b>{schedule?.mode}</b></div><div><span>Último inicio real</span><b>{formatDate(latestJob?.startedAt)}</b></div><div><span>Última finalización</span><b>{formatDate(latestJob?.finishedAt)}</b></div>{isCompetitor && <><div><span>Disponibles / sin stock</span><b>{integer.format(selectedSummary?.inStock ?? 0)} / {integer.format(selectedSummary?.outOfStock ?? 0)}</b></div><div><span>Homologados</span><b>{integer.format((selectedSummary?.autoMatches ?? 0) + (selectedSummary?.confirmedMatches ?? 0))}</b></div><div><span>Por validar</span><b>{integer.format(selectedSummary?.reviewMatches ?? 0)}</b></div></>}</div></article></section>
         </>
       )}
+      </>}
     </main>
   );
 }

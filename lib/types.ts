@@ -68,3 +68,44 @@ export type JobsResponse = {
   items: JobSummary[];
   sources: MonitoringSourceSummary[];
 };
+
+export type DataQualityIssueSummary = {
+  code: string;
+  level: "warning" | "critical";
+  title: string;
+  detail: string;
+};
+
+export type DataQualitySourceSummary = {
+  source: JobSummary["source"];
+  sourceName: string;
+  baseUrl: string;
+  level: "healthy" | "warning" | "critical" | "pending";
+  label: string;
+  issues: DataQualityIssueSummary[];
+  latestSuccessAt: string | null;
+  latestAttemptStatus: string | null;
+  latestAttemptAt: string | null;
+  productsFound: number;
+  productsSaved: number;
+  productsWithoutSku: number;
+  pagesScanned: number;
+  currentProducts: number;
+  previousProducts: number | null;
+  missingProducts: number;
+  newProducts: number;
+  productsWithPrice: number;
+  matchedProducts: number;
+  reviewMatches: number;
+  ageHours: number | null;
+  persistenceRate: number | null;
+  catalogChangePercent: number | null;
+  priceCoveragePercent: number | null;
+  matchCoveragePercent: number | null;
+};
+
+export type DataQualityResponse = {
+  generatedAt: string;
+  summary: { healthy: number; warning: number; critical: number; pending: number };
+  sources: DataQualitySourceSummary[];
+};
