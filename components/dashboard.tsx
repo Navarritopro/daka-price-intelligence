@@ -10,6 +10,7 @@ import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
 import OnboardingCenter, { type OnboardingNavigationTarget } from "@/components/onboarding-center";
 import DakaProductUniverse from "@/components/daka-product-universe";
+import ExecutiveSummary from "@/components/executive-summary";
 import FilterFeedback, { type ActiveFilter } from "@/components/filter-feedback";
 import { readApiJson } from "@/lib/api-client";
 import { describeCatalogFilters, describePriceChangeFilters } from "@/lib/catalog-filter-state";
@@ -33,7 +34,7 @@ type CapturePage = {
   maxPrice: number | null;
   changeCount: number;
 };
-type View = "prices" | "universe" | "operations";
+type View = "prices" | "universe" | "operations" | "executive";
 type PriceTab = "explore" | "changes" | "damasco" | "catalogChanges" | "competitors" | "opportunities";
 type ChangeProduct = ProductSummary & {
   changeCount: number;
@@ -241,7 +242,7 @@ export default function Dashboard() {
 
   const restoreNavigation = useCallback(() => {
     const params = new URLSearchParams(window.location.search);
-    const restoredView = allowedQueryValue(params, "view", ["prices", "universe", "operations"] as const, "prices");
+    const restoredView = allowedQueryValue(params, "view", ["prices", "universe", "operations", "executive"] as const, "prices");
     const restoredTab = allowedQueryValue(params, "priceTab", ["explore", "changes", "damasco", "catalogChanges", "competitors", "opportunities"] as const, "explore");
     const restoredHistory = params.get("history") === "product";
     setView(restoredView);
@@ -781,6 +782,7 @@ export default function Dashboard() {
       <header className="app-header">
         <div className="brand">DAKA <span>PRICE LAB</span></div>
         <nav className="module-nav" aria-label="Módulos principales" data-tour="module-nav">
+          <button className={view === "executive" ? "module-button active" : "module-button"} onClick={() => navigateToView("executive")}>Resumen ejecutivo</button>
           <button className={view === "prices" ? "module-button active" : "module-button"} onClick={() => navigateToView("prices")}>Inteligencia de precios</button>
           <button className={view === "universe" ? "module-button active" : "module-button"} onClick={() => navigateToView("universe")}>Universo de Productos Daka</button>
           <button className={view === "operations" ? "module-button active" : "module-button"} onClick={() => navigateToView("operations")}>Monitoreo técnico</button>
@@ -796,7 +798,7 @@ export default function Dashboard() {
       {error && <div className="error-banner"><strong>Conexión pendiente</strong><span>{error}</span><button onClick={() => void load()}>Reintentar</button></div>}
       {(view !== "prices" || priceTab !== "explore" || historyMode) && <div className="context-back-row"><button type="button" onClick={returnToPreviousView}>← Volver a la vista anterior</button></div>}
 
-      {view === "prices" ? (
+      {view === "executive" ? <ExecutiveSummary onOpenMonitoring={() => navigateToView("operations")} onOpenComparison={() => navigateToPriceTab("competitors")} onOpenCatalog={() => navigateToPriceTab("damasco")}/> : view === "prices" ? (
         <main className="price-intelligence">
           <section className="hero-grid" data-tour="dashboard-summary">
             <article className="intro-card"><div className="eyebrow">Inteligencia de precios · Fases 1 y 2</div><h1>El mercado y el histórico de DAKA, en una sola vista.</h1><p>Seguimiento diario en USD, variaciones históricas y comparación competitiva con homologación auditable.</p></article>
