@@ -182,8 +182,10 @@ export default function CatalogChanges() {
     setExporting(true); setError(null);
     try {
       const exported: CatalogItem[] = [];
-      for (let offset = 0; offset < page.total; offset += 200) {
-        const exportParameters = parameters(offset, 200);
+      const exportPageSize = 5000;
+      for (let offset = 0; offset < page.total; offset += exportPageSize) {
+        const exportParameters = parameters(offset, exportPageSize);
+        exportParameters.set("export", "1");
         exportParameters.set("includeMetadata", "0");
         const response = await fetch(`/api/catalog-changes?${exportParameters}`, { cache: "no-store" });
         const payload = await readApiJson<CatalogPage>(response, "No fue posible preparar la exportación");

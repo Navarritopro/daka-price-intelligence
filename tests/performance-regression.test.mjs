@@ -77,6 +77,15 @@ test("la exportación y paginación de cambios de catálogo no recalculan metada
   assert.match(catalogChanges, /comparisons: current\.comparisons/);
 });
 
+test("la exportación de cambios de catálogo evita recalcular la consulta cada 200 filas", () => {
+  assert.match(catalogChangesRoute, /const EXPORT_PAGE_LIMIT = 5000/);
+  assert.match(catalogChangesRoute, /searchParams\.get\("export"\) === "1"/);
+  assert.match(catalogChangesRoute, /exportMode \? EXPORT_PAGE_LIMIT : PAGE_LIMIT/);
+  assert.match(catalogChanges, /const exportPageSize = 5000/);
+  assert.match(catalogChanges, /exportParameters\.set\("export", "1"\)/);
+  assert.doesNotMatch(catalogChanges.slice(catalogChanges.indexOf("const exportExcel"), catalogChanges.indexOf("return (")), /offset \+= 200/);
+});
+
 test("la optimización conserva fuentes, estados y columnas aprobadas", () => {
   for (const fragment of ["daka", "damasco", "multimax", "ivoo", "venelectronics", "soytechno"]) {
     assert.ok(productsRoute.includes(fragment), `Debe conservar la fuente ${fragment}`);

@@ -9,6 +9,8 @@ import {
 export const dynamic = "force-dynamic";
 
 const ABSENCE_FILTERS = ["all", "1", "2-3", "4+"] as const;
+const PAGE_LIMIT = 200;
+const EXPORT_PAGE_LIMIT = 5000;
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +22,9 @@ export async function GET(request: NextRequest) {
     const search = request.nextUrl.searchParams.get("search")?.trim() ?? "";
     const brand = request.nextUrl.searchParams.get("brand")?.trim() ?? "";
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
-    const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 200);
+    const exportMode = request.nextUrl.searchParams.get("export") === "1";
+    const maximumLimit = exportMode ? EXPORT_PAGE_LIMIT : PAGE_LIMIT;
+    const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), maximumLimit);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
     const includeMetadata = request.nextUrl.searchParams.get("includeMetadata") !== "0";
     const searchLike = `%${search}%`;
