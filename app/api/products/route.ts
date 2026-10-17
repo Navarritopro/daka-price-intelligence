@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const stock = ["all", "in", "out"].includes(requestedStock) ? requestedStock : "all";
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
+    const includeMetadata = request.nextUrl.searchParams.get("includeMetadata") !== "0";
     const searchLike = `%${search}%`;
 
     const rows = await sql`
@@ -94,13 +95,13 @@ export async function GET(request: NextRequest) {
       OFFSET ${offset}
     `;
 
-    const brandRows = await sql`
+    const brandRows = includeMetadata ? await sql`
       SELECT MIN(TRIM(p.brand)) AS brand
       FROM products p JOIN sources s ON s.id = p.source_id
       WHERE s.slug = ${source} AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
       GROUP BY LOWER(TRIM(p.brand))
       ORDER BY brand
-    `;
+    ` : [];
 
     const items = rows.map((row) => ({
       id: asNumber(row.id),

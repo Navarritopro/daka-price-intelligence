@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     const category = request.nextUrl.searchParams.get("category")?.trim() ?? "";
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 200);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
+    const includeMetadata = request.nextUrl.searchParams.get("includeMetadata") !== "0";
     const searchLike = `%${search}%`;
     const comparisonMode = period.mode;
     const startDate = period.startDate ?? "1900-01-01";
@@ -140,7 +141,7 @@ export async function GET(request: NextRequest) {
       LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const comparisonRows = await sql`
+    const comparisonRows = includeMetadata ? await sql`
       WITH selected_sources AS (
         SELECT id, slug, name FROM sources
         WHERE active = TRUE
@@ -175,9 +176,9 @@ export async function GET(request: NextRequest) {
       LEFT JOIN valid_jobs current ON current.id = p.current_job_id
       ORDER BY CASE p.slug WHEN 'daka' THEN 1 WHEN 'damasco' THEN 2 WHEN 'multimax' THEN 3
         WHEN 'ivoo' THEN 4 WHEN 'venelectronics' THEN 5 ELSE 6 END
-    `;
+    ` : [];
 
-    const [categoryRows, brandRows] = await Promise.all([
+    const [categoryRows, brandRows] = includeMetadata ? await Promise.all([
       sql`SELECT DISTINCT p.category FROM products p JOIN sources s ON s.id = p.source_id
           WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
             AND (${source} = 'all' OR s.slug = ${source}) AND p.category IS NOT NULL AND p.category <> '' ORDER BY p.category`,
@@ -185,7 +186,7 @@ export async function GET(request: NextRequest) {
           WHERE s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
             AND (${source} = 'all' OR s.slug = ${source}) AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
           GROUP BY LOWER(TRIM(p.brand)) ORDER BY brand`
-    ]);
+    ]) : [[], []];
 
     const items = rows.filter((row) => row.id != null).map((row) => ({
       id: asNumber(row.id), externalId: row.external_id, name: row.name,

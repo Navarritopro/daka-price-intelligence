@@ -210,14 +210,15 @@ export default function CompetitorComparison({ canAdmin = false }: { canAdmin?: 
     setLoadingMore(true);
     const version = queryVersion.current;
     try {
-      const response = await fetch(`/api/comparison?${parameters(items.length).toString()}`, { cache: "no-store" });
+      const nextParameters = parameters(items.length);
+      nextParameters.set("includeMetadata", "0");
+      const response = await fetch(`/api/comparison?${nextParameters.toString()}`, { cache: "no-store" });
       const page = await readApiJson<ComparisonPage & { error?: string }>(response, "No fue posible cargar más comparaciones");
       if (!response.ok) throw new Error(page.error ?? "No fue posible cargar más comparaciones");
       if (queryVersion.current !== version) return;
       setItems((current) => [...current, ...page.items.filter((item) => !current.some((known) => known.matchId === item.matchId))]);
       setTotal(page.total);
       setHasMore(page.hasMore);
-      setStats(page.stats);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "No fue posible cargar más comparaciones");
     } finally {

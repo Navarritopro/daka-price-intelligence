@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       ? requestedSort : "gap_desc";
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
+    const includeMetadata = request.nextUrl.searchParams.get("includeMetadata") !== "0";
     const searchLike = `%${search}%`;
 
     const rows = await sql`
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
       LIMIT ${limit} OFFSET ${offset}
     `;
 
-    const [stats] = await sql`
+    const statsRows = includeMetadata ? await sql`
       WITH competitor_source AS (
         SELECT id FROM sources WHERE slug = ${source}
       ), latest_daka_job AS (
@@ -125,9 +126,14 @@ export async function GET(request: NextRequest) {
         COALESCE(AVG(ABS(((daka_price - competitor_price) / NULLIF(competitor_price, 0)) * 100)), 0)::numeric(10,2) AS average_gap_pct,
         (SELECT finished_at FROM latest_competitor_job) AS competitor_last_scrape_at
       FROM valid
-    `;
+    ` : [];
+    const stats = statsRows[0] as {
+      competitor_products?: unknown; review_pending?: unknown; review_alternatives?: unknown;
+      matched_products?: unknown; daka_lower?: unknown; competitor_lower?: unknown;
+      equal_price?: unknown; average_gap_pct?: unknown; competitor_last_scrape_at?: string | null;
+    } | undefined;
 
-    const categoryRows = await sql`
+    const categoryRows = includeMetadata ? await sql`
       SELECT DISTINCT d.category
       FROM product_matches pm
       JOIN products d ON d.id = pm.daka_product_id
@@ -135,8 +141,8 @@ export async function GET(request: NextRequest) {
       JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
       WHERE pm.status IN ('auto', 'confirmed') AND d.category IS NOT NULL
       ORDER BY d.category
-    `;
-    const brandRows = await sql`
+    ` : [];
+    const brandRows = includeMetadata ? await sql`
       SELECT MIN(brand) AS brand
       FROM (
         SELECT TRIM(d.brand) AS brand
@@ -154,7 +160,7 @@ export async function GET(request: NextRequest) {
       ) matched_brands
       GROUP BY LOWER(brand)
       ORDER BY brand
-    `;
+    ` : [];
 
     const items = rows.map((row) => ({
       matchId: asNumber(row.match_id),
@@ -185,7 +191,7 @@ export async function GET(request: NextRequest) {
       source, items, total, offset, limit, hasMore: offset + items.length < total,
       categories: categoryRows.map((row) => row.category),
       brands: brandRows.map((row) => row.brand),
-      stats: {
+      stats: includeMetadata ? {
         competitorProducts: asNumber(stats?.competitor_products),
         reviewPending: asNumber(stats?.review_pending),
         reviewAlternatives: asNumber(stats?.review_alternatives),
@@ -195,7 +201,7 @@ export async function GET(request: NextRequest) {
         equalPrice: asNumber(stats?.equal_price),
         averageGapPct: asNumber(stats?.average_gap_pct),
         competitorLastScrapeAt: stats?.competitor_last_scrape_at ?? null
-      }
+      } : undefined
     });
   } catch (error) {
     console.error(error);

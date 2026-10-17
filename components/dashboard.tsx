@@ -353,6 +353,7 @@ export default function Dashboard() {
       status: productStatus
     });
     params.set("brand", brandFilter);
+    params.set("includeMetadata", "0");
 
     try {
       const response = await fetch(`/api/products?${params.toString()}`, { cache: "no-store" });
@@ -437,6 +438,7 @@ export default function Dashboard() {
       status: changeStatus
     });
     params.set("brand", brandFilter);
+    params.set("includeMetadata", "0");
     if (reportComparison?.source === "daka") {
       params.set("currentJob", reportComparison.currentJob);
       params.set("previousJob", reportComparison.previousJob);

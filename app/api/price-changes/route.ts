@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const status = ["current", "missing", "all"].includes(requestedStatus) ? requestedStatus : "current";
     const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get("limit")) || 50, 1), 50);
     const offset = Math.max(Number(request.nextUrl.searchParams.get("offset")) || 0, 0);
+    const includeMetadata = request.nextUrl.searchParams.get("includeMetadata") !== "0";
     const searchLike = `%${search}%`;
     const currentJob = request.nextUrl.searchParams.get("currentJob")?.trim() ?? "";
     const previousJob = request.nextUrl.searchParams.get("previousJob")?.trim() ?? "";
@@ -29,13 +30,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "La comparación requiere ambas ejecuciones" }, { status: 400 });
     }
 
-    const brandRows = await sql`
+    const brandRows = includeMetadata ? await sql`
       SELECT MIN(TRIM(p.brand)) AS brand
       FROM products p JOIN sources s ON s.id = p.source_id
       WHERE s.slug = ${source} AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
       GROUP BY LOWER(TRIM(p.brand))
       ORDER BY brand
-    `;
+    ` : [];
 
     if (currentJob && previousJob) {
       const exactRows = await sql`

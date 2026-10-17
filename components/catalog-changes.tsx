@@ -121,10 +121,18 @@ export default function CatalogChanges() {
     if (!page?.hasMore || loadingMore) return;
     setLoadingMore(true);
     try {
-      const response = await fetch(`/api/catalog-changes?${parameters(items.length)}`, { cache: "no-store" });
+      const nextParameters = parameters(items.length);
+      nextParameters.set("includeMetadata", "0");
+      const response = await fetch(`/api/catalog-changes?${nextParameters}`, { cache: "no-store" });
       const payload = await readApiJson<CatalogPage>(response, "No fue posible cargar más productos");
       if (!response.ok) throw new Error(payload.error ?? "No fue posible cargar más productos");
-      setItems((current) => [...current, ...payload.items]); setPage(payload);
+      setItems((current) => [...current, ...payload.items]);
+      setPage((current) => current ? {
+        ...payload,
+        comparisons: current.comparisons,
+        categories: current.categories,
+        brands: current.brands
+      } : payload);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "No fue posible cargar más productos");
     } finally { setLoadingMore(false); }
@@ -175,7 +183,9 @@ export default function CatalogChanges() {
     try {
       const exported: CatalogItem[] = [];
       for (let offset = 0; offset < page.total; offset += 200) {
-        const response = await fetch(`/api/catalog-changes?${parameters(offset, 200)}`, { cache: "no-store" });
+        const exportParameters = parameters(offset, 200);
+        exportParameters.set("includeMetadata", "0");
+        const response = await fetch(`/api/catalog-changes?${exportParameters}`, { cache: "no-store" });
         const payload = await readApiJson<CatalogPage>(response, "No fue posible preparar la exportación");
         if (!response.ok) throw new Error(payload.error ?? "No fue posible preparar la exportación");
         exported.push(...payload.items);

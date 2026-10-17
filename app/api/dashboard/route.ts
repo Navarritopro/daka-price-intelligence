@@ -16,11 +16,6 @@ export async function GET() {
           AND status = 'success'
         ORDER BY started_at DESC
         LIMIT 1
-      ), latest_prices AS (
-        SELECT DISTINCT ON (ph.product_id)
-          ph.product_id, ph.price_usd, ph.scraped_at
-        FROM price_history ph
-        ORDER BY ph.product_id, ph.scraped_at DESC
       ), latest_snapshot AS (
         SELECT ph.product_id, ph.price_usd, ph.scraped_at
         FROM price_history ph
@@ -47,7 +42,12 @@ export async function GET() {
         COUNT(ls.price_usd)::int AS products_with_price,
         COALESCE(AVG(ls.price_usd), 0)::numeric(12,2) AS average_price,
         MAX(ls.scraped_at) AS last_successful_scrape_at,
-        MAX(lp.scraped_at) AS last_recorded_price_at,
+        (
+          SELECT MAX(ph2.scraped_at)
+          FROM price_history ph2
+          JOIN products p2 ON p2.id = ph2.product_id
+          WHERE p2.source_id = (SELECT id FROM daka_source)
+        ) AS last_recorded_price_at,
         COALESCE(tc.total, 0)::int AS changes_today,
         COALESCE(tc.drops, 0)::int AS drops_today,
         COALESCE(tc.increases, 0)::int AS increases_today,
@@ -56,7 +56,6 @@ export async function GET() {
         EXTRACT(EPOCH FROM (lj.finished_at - lj.started_at))::int AS duration_seconds
       FROM products p
       JOIN sources s ON s.id = p.source_id AND s.slug = 'daka'
-      LEFT JOIN latest_prices lp ON lp.product_id = p.id
       LEFT JOIN latest_snapshot ls ON ls.product_id = p.id
       CROSS JOIN today_changes tc
       LEFT JOIN latest_job lj ON TRUE

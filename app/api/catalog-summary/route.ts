@@ -39,23 +39,23 @@ export async function GET(request: NextRequest) {
         COALESCE(AVG(ls.price_usd), 0)::numeric(12,2) AS average_price,
         (SELECT finished_at FROM latest_successful_job) AS last_scrape_at,
         (SELECT status FROM latest_job) AS last_job_status,
-        EXTRACT(EPOCH FROM ((SELECT finished_at FROM latest_job) - (SELECT started_at FROM latest_job)))::int AS duration_seconds
+        EXTRACT(EPOCH FROM ((SELECT finished_at FROM latest_job) - (SELECT started_at FROM latest_job)))::int AS duration_seconds,
+        ARRAY(
+          SELECT DISTINCT p2.category FROM products p2
+          WHERE p2.source_id = (SELECT id FROM selected_source)
+            AND p2.category IS NOT NULL AND p2.category <> ''
+          ORDER BY p2.category
+        ) AS categories,
+        ARRAY(
+          SELECT MIN(TRIM(p3.brand)) FROM products p3
+          WHERE p3.source_id = (SELECT id FROM selected_source)
+            AND p3.brand IS NOT NULL AND TRIM(p3.brand) <> ''
+          GROUP BY LOWER(TRIM(p3.brand))
+          ORDER BY MIN(TRIM(p3.brand))
+        ) AS brands
       FROM products p
       LEFT JOIN latest_snapshot ls ON ls.product_id = p.id
       WHERE p.source_id = (SELECT id FROM selected_source)
-    `;
-    const categoryRows = await sql`
-      SELECT DISTINCT p.category
-      FROM products p JOIN sources s ON s.id = p.source_id
-      WHERE s.slug = ${source} AND p.category IS NOT NULL AND p.category <> ''
-      ORDER BY p.category
-    `;
-    const brandRows = await sql`
-      SELECT MIN(TRIM(p.brand)) AS brand
-      FROM products p JOIN sources s ON s.id = p.source_id
-      WHERE s.slug = ${source} AND p.brand IS NOT NULL AND TRIM(p.brand) <> ''
-      GROUP BY LOWER(TRIM(p.brand))
-      ORDER BY brand
     `;
     return NextResponse.json({
       source: summary?.source_name ?? source,
@@ -69,8 +69,8 @@ export async function GET(request: NextRequest) {
       lastScrapeAt: summary?.last_scrape_at ?? null,
       lastJobStatus: summary?.last_job_status ?? null,
       lastJobDurationSeconds: summary?.duration_seconds == null ? null : asNumber(summary.duration_seconds),
-      categories: categoryRows.map((row) => row.category),
-      brands: brandRows.map((row) => row.brand)
+      categories: Array.isArray(summary?.categories) ? summary.categories : [],
+      brands: Array.isArray(summary?.brands) ? summary.brands : []
     });
   } catch (error) {
     console.error(error);

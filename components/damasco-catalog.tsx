@@ -231,7 +231,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
 
   const productParams = useCallback((offset: number) => new URLSearchParams({
     source, limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
-    status, change, stock, category, brand
+    status, change, stock, category, brand, includeMetadata: "0"
   }), [brand, category, change, debouncedSearch, source, status, stock]);
 
   useEffect(() => {
@@ -305,6 +305,7 @@ export default function DamascoCatalog({ reportComparison = null }: { reportComp
       source, limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
       days, movement, threshold, status: changeStatus, brand
     });
+    params.set("includeMetadata", "0");
     if (activeReportComparison) {
       params.set("currentJob", activeReportComparison.currentJob);
       params.set("previousJob", activeReportComparison.previousJob);
