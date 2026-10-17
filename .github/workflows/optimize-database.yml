@@ -1,0 +1,40 @@
+name: Optimizar rendimiento PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Escribe OPTIMIZAR para crear los índices de rendimiento"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  optimize:
+    if: ${{ inputs.confirm == 'OPTIMIZAR' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.TEMP_DATABASE_URL || secrets.DATABASE_URL }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Validar conexión y versión
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}" || { echo "Falta TEMP_DATABASE_URL o DATABASE_URL"; exit 1; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT current_database(), current_user, current_setting('server_version');"
+      - name: Crear índices sin bloquear el scraping
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/performance_indexes.sql
+      - name: Verificar índices instalados
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=12
+          installed="$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "SELECT COUNT(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname IN ('idx_jobs_source_status_started_cover','idx_price_history_job_product_cover','idx_price_history_product_scraped_cover','idx_products_source_brand_normalized','idx_products_source_category_present','idx_matches_status_daka_competitor','idx_matches_status_competitor_daka','idx_alerts_source_created_product','idx_daka_card_sku_period','idx_daka_inventory_snapshot_date','idx_daka_price_active_date','idx_daka_universe_source_status_sku');")"
+          test "$installed" = "$expected" || { echo "Se esperaban $expected índices y se encontraron $installed"; exit 1; }
+          echo "## Optimización PostgreSQL completada" >> "$GITHUB_STEP_SUMMARY"
+          echo "Se verificaron **$installed índices** y se actualizaron las estadísticas del planificador." >> "$GITHUB_STEP_SUMMARY"
