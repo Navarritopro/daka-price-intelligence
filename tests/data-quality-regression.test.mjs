@@ -55,3 +55,28 @@ test("la interfaz expone recuperación, validación y detalle sin modificar dato
   assert.match(component, /Validar sitio de origen/);
   assert.doesNotMatch(route, /INSERT|UPDATE|DELETE/);
 });
+
+test("el panel claro aísla el color heredado del monitoreo oscuro", () => {
+  assert.match(styles, /\.data-quality-center\{[^}]*color:#0a2143/);
+  assert.match(styles, /\.quality-intro\{[^}]*color:#0a2143/);
+  assert.match(styles, /\.quality-summary article\{[^}]*color:#0a2143/);
+  assert.match(styles, /\.quality-table-card\{[^}]*color:#0a2143/);
+  assert.match(styles, /\.quality-table td\{[^}]*color:#20364f/);
+  assert.match(styles, /\.quality-table td>small\{[^}]*color:#52677f/);
+});
+
+test("los colores explícitos del centro superan contraste AA sobre blanco", () => {
+  const luminance = (hex) => {
+    const channels = hex.match(/../g).map((value) => Number.parseInt(value, 16) / 255)
+      .map((value) => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  const contrast = (foreground, background = "ffffff") => {
+    const first = luminance(foreground);
+    const second = luminance(background);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  };
+  for (const color of ["0a2143", "20364f", "52677f", "003288"]) {
+    assert.ok(contrast(color) >= 4.5, `${color} debe superar contraste AA sobre blanco`);
+  }
+});
