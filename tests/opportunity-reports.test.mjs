@@ -11,7 +11,7 @@ import {
 } from "../lib/opportunity-reports.ts";
 
 const query = {
-  search: "tv", source: "all", brand: "Samsung", category: "Televisores",
+  search: "tv", source: "all", brands: ["Samsung"], category: "Televisores",
   type: "all", priority: "all", availability: "all", minimumGap: 5,
   sort: "gap_pct_desc", limit: 50, offset: 0
 };
@@ -78,6 +78,19 @@ test("Resumen de Telegram es breve y conserva filtros", () => {
   assert.match(caption, /Damasco/);
   assert.ok(caption.length <= 1000);
   assert.match(describeOpportunityFilters(query), /Samsung/);
+});
+
+test("Excel, PDF y Telegram identifican todas las marcas seleccionadas", async () => {
+  const multiple = { ...query, brands: ["Samsung", "LG"] };
+  const filters = describeOpportunityFilters(multiple);
+  assert.match(filters, /Marcas: Samsung, LG/);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildOpportunityExcel(page, multiple));
+  const summary = workbook.getWorksheet("Resumen");
+  assert.equal(summary.getCell("B3").value, filters);
+  const pdf = await buildOpportunityPdf(page, multiple);
+  assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
+  assert.match(buildOpportunityTelegramCaption(page, multiple), /Samsung, LG/);
 });
 
 test("Nombre del archivo usa una extensión aprobada", () => {

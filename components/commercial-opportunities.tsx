@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readApiJson } from "@/lib/api-client";
 import { useAccessibleDialog } from "@/hooks/use-accessible-dialog";
+import OpportunityBrandFilter from "@/components/opportunity-brand-filter";
 
 type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type OpportunityType = "price_risk" | "price_advantage" | "availability_risk" | "availability_advantage" | "stale_data";
@@ -126,7 +127,7 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [source, setSource] = useState("all");
-  const [brand, setBrand] = useState("");
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [category, setCategory] = useState("");
   const [type, setType] = useState("all");
   const [priority, setPriority] = useState("all");
@@ -152,10 +153,14 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  const parameters = useCallback((offset: number) => new URLSearchParams({
-    limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
-    source, brand, category, type, priority, availability, minimumGap, sort
-  }), [availability, brand, category, debouncedSearch, minimumGap, priority, sort, source, type]);
+  const parameters = useCallback((offset: number) => {
+    const params = new URLSearchParams({
+      limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
+      source, category, type, priority, availability, minimumGap, sort
+    });
+    selectedBrands.forEach((brand) => params.append("brand", brand));
+    return params;
+  }, [availability, selectedBrands, category, debouncedSearch, minimumGap, priority, sort, source, type]);
 
   const reportParameters = useCallback(() => {
     const values = parameters(0);
@@ -263,8 +268,8 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
 
     <div className="opportunity-filters" data-tour="opportunity-filters">
       <input aria-label="Buscar oportunidad" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, SAP, marca o referencia"/>
-      <select aria-label="Competidor" value={source} onChange={(event) => { setSource(event.target.value); setBrand(""); setCategory(""); }}><option value="all">Todos los competidores</option>{Object.entries(COMPETITORS).map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}</select>
-      <select aria-label="Marca" value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brands.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+      <select aria-label="Competidor" value={source} onChange={(event) => { setSource(event.target.value); setSelectedBrands([]); setCategory(""); }}><option value="all">Todos los competidores</option>{Object.entries(COMPETITORS).map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}</select>
+      <OpportunityBrandFilter options={brands} selected={selectedBrands} onChange={setSelectedBrands}/>
       <select aria-label="Categoría" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
       <select aria-label="Tipo de oportunidad" value={type} onChange={(event) => setType(event.target.value)}><option value="all">Todos los tipos</option><option value="price_risk">Riesgo de precio</option><option value="price_advantage">Ventaja de precio</option><option value="availability_risk">Riesgo de disponibilidad</option><option value="availability_advantage">Ventaja de disponibilidad</option><option value="multi_pressure">Presión multicompetidor</option><option value="stale_data">Datos por actualizar</option></select>
       <select aria-label="Prioridad" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="all">Todas las prioridades</option><option value="critical">Crítica</option><option value="high">Alta</option><option value="medium">Media</option><option value="informative">Informativa</option></select>

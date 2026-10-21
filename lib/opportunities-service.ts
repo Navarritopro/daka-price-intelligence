@@ -6,6 +6,7 @@ import {
   type OpportunitySignal as Signal
 } from "@/lib/opportunity-rules";
 import { compareOpportunities, type OpportunitySort } from "@/lib/opportunity-sort";
+import { distinctBrands, matchesSelectedBrands, parseSelectedBrands } from "@/lib/opportunity-brand-selection";
 
 export { compareOpportunities } from "@/lib/opportunity-sort";
 export type { OpportunitySort } from "@/lib/opportunity-sort";
@@ -23,7 +24,7 @@ export type CompetitorSource = keyof typeof COMPETITORS;
 export type OpportunityQuery = {
   search: string;
   source: "all" | CompetitorSource;
-  brand: string;
+  brands: string[];
   category: string;
   type: string;
   priority: string;
@@ -158,7 +159,7 @@ export function parseOpportunityQuery(searchParams: URLSearchParams): Opportunit
   return {
     search: searchParams.get("search")?.trim().toLowerCase() ?? "",
     source: requestedSource === "all" || requestedSource in COMPETITORS ? requestedSource as "all" | CompetitorSource : "all",
-    brand: searchParams.get("brand")?.trim() ?? "",
+    brands: parseSelectedBrands(searchParams),
     category: searchParams.get("category")?.trim() ?? "",
     type: VALID_TYPES.has(requestedType) ? requestedType : "all",
     priority: VALID_PRIORITIES.has(requestedPriority) ? requestedPriority : "all",
@@ -172,7 +173,7 @@ export function parseOpportunityQuery(searchParams: URLSearchParams): Opportunit
 
 export async function getOpportunityPage(query: OpportunityQuery, includeAll = false): Promise<OpportunityPage> {
     const sql = getSql();
-    const { search, source, brand, category, type, priority, availability, minimumGap, sort, limit, offset } = query;
+    const { search, source, brands, category, type, priority, availability, minimumGap, sort, limit, offset } = query;
 
     const rows = await sql<PairRow[]>`
       WITH ranked_jobs AS (
@@ -354,7 +355,6 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       });
     }
 
-    const normalizedBrand = brand.toLowerCase();
     const normalizedCategory = category.toLowerCase();
     opportunities = opportunities.filter((item) => {
       const relevantComparisons = item.comparisons;
@@ -363,8 +363,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
         ...relevantComparisons.flatMap((entry) => [entry.competitor.name, entry.competitor.externalId, entry.competitor.brand])]
         .filter(Boolean).join(" ").toLowerCase();
       if (search && !searchable.includes(search)) return false;
-      if (normalizedBrand && ![item.daka.brand, ...relevantComparisons.map((entry) => entry.competitor.brand)]
-        .some((value) => value?.trim().toLowerCase() === normalizedBrand)) return false;
+      if (!matchesSelectedBrands(brands, [item.daka.brand, ...relevantComparisons.map((entry) => entry.competitor.brand)])) return false;
       if (normalizedCategory && ![item.daka.category, ...relevantComparisons.map((entry) => entry.competitor.category)]
         .some((value) => value?.trim().toLowerCase() === normalizedCategory)) return false;
       if (type === "multi_pressure" && item.pressureCount < 2) return false;
@@ -386,7 +385,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       availabilityAdvantages: opportunities.filter((item) => item.comparisons.some((entry) => entry.signal?.type === "availability_advantage")).length,
       stale: opportunities.filter((item) => item.comparisons.some((entry) => entry.signal?.type === "stale_data")).length
     };
-    const brands = Array.from(new Set(rows.flatMap((row) => [row.daka_brand, row.competitor_brand]).filter((value): value is string => Boolean(value?.trim()))))
+    const availableBrands = distinctBrands(rows.flatMap((row) => [row.daka_brand, row.competitor_brand]))
       .sort((a, b) => a.localeCompare(b, "es"));
     const categories = Array.from(new Set(rows.flatMap((row) => [row.daka_category, row.competitor_category]).filter((value): value is string => Boolean(value?.trim()))))
       .sort((a, b) => a.localeCompare(b, "es"));
@@ -399,7 +398,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
     return {
       items, total: opportunities.length, offset: pageOffset, limit: pageLimit,
       hasMore: !includeAll && pageOffset + items.length < opportunities.length,
-      minimumGap, stats, brands, categories,
+      minimumGap, stats, brands: availableBrands, categories,
       freshnessHours: 48,
       generatedAt: new Date().toISOString()
     };

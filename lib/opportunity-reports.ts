@@ -56,7 +56,7 @@ export function describeOpportunityFilters(query: OpportunityQuery) {
   return [
     query.search && `Búsqueda: ${query.search}`,
     query.source !== "all" && `Competidor: ${SOURCE_LABELS[query.source] ?? query.source}`,
-    query.brand && `Marca: ${query.brand}`,
+    query.brands.length > 0 && `Marcas: ${query.brands.join(", ")}`,
     query.category && `Categoría: ${query.category}`,
     query.type !== "all" && `Tipo: ${TYPE_LABELS[query.type] ?? query.type}`,
     query.priority !== "all" && `Prioridad: ${PRIORITY_LABELS[query.priority] ?? query.priority}`,
