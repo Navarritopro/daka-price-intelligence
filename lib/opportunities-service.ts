@@ -7,6 +7,7 @@ import {
 } from "@/lib/opportunity-rules";
 import { compareOpportunities, type OpportunitySort } from "@/lib/opportunity-sort";
 import { distinctBrands, matchesSelectedBrands, parseSelectedBrands } from "@/lib/opportunity-brand-selection";
+import { distinctSelections, matchesOpportunitySelection, parseOpportunitySelections } from "@/lib/opportunity-multi-selection";
 
 export { compareOpportunities } from "@/lib/opportunity-sort";
 export type { OpportunitySort } from "@/lib/opportunity-sort";
@@ -23,12 +24,12 @@ export type CompetitorSource = keyof typeof COMPETITORS;
 
 export type OpportunityQuery = {
   search: string;
-  source: "all" | CompetitorSource;
+  sources: CompetitorSource[];
   brands: string[];
-  category: string;
-  type: string;
-  priority: string;
-  availability: string;
+  categories: string[];
+  types: string[];
+  priorities: string[];
+  availabilities: string[];
   minimumGap: number;
   sort: OpportunitySort;
   limit: number;
@@ -151,19 +152,15 @@ const VALID_AVAILABILITY = new Set(["all", "daka_available", "daka_unavailable",
 const VALID_SORTS = new Set<OpportunitySort>(["priority", "competitor_asc", "competitor_desc", "gap_usd_desc", "gap_usd_asc", "gap_pct_desc", "gap_pct_asc"]);
 
 export function parseOpportunityQuery(searchParams: URLSearchParams): OpportunityQuery {
-  const requestedSource = searchParams.get("source")?.trim() ?? "all";
-  const requestedType = searchParams.get("type") ?? "all";
-  const requestedPriority = searchParams.get("priority") ?? "all";
-  const requestedAvailability = searchParams.get("availability") ?? "all";
   const requestedSort = searchParams.get("sort") as OpportunitySort | null;
   return {
     search: searchParams.get("search")?.trim().toLowerCase() ?? "",
-    source: requestedSource === "all" || requestedSource in COMPETITORS ? requestedSource as "all" | CompetitorSource : "all",
+    sources: parseOpportunitySelections(searchParams, "source", new Set(Object.keys(COMPETITORS))) as CompetitorSource[],
     brands: parseSelectedBrands(searchParams),
-    category: searchParams.get("category")?.trim() ?? "",
-    type: VALID_TYPES.has(requestedType) ? requestedType : "all",
-    priority: VALID_PRIORITIES.has(requestedPriority) ? requestedPriority : "all",
-    availability: VALID_AVAILABILITY.has(requestedAvailability) ? requestedAvailability : "all",
+    categories: parseOpportunitySelections(searchParams, "category"),
+    types: parseOpportunitySelections(searchParams, "type", VALID_TYPES),
+    priorities: parseOpportunitySelections(searchParams, "priority", VALID_PRIORITIES),
+    availabilities: parseOpportunitySelections(searchParams, "availability", VALID_AVAILABILITY),
     minimumGap: Math.min(Math.max(Number(searchParams.get("minimumGap")) || 5, 0), 100),
     sort: requestedSort && VALID_SORTS.has(requestedSort) ? requestedSort : "priority",
     limit: Math.min(Math.max(Number(searchParams.get("limit")) || 50, 1), 50),
@@ -173,7 +170,7 @@ export function parseOpportunityQuery(searchParams: URLSearchParams): Opportunit
 
 export async function getOpportunityPage(query: OpportunityQuery, includeAll = false): Promise<OpportunityPage> {
     const sql = getSql();
-    const { search, source, brands, category, type, priority, availability, minimumGap, sort, limit, offset } = query;
+    const { search, sources, brands, categories, types, priorities, availabilities, minimumGap, sort, limit, offset } = query;
 
     const rows = await sql<PairRow[]>`
       WITH ranked_jobs AS (
@@ -302,9 +299,9 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       };
     });
 
-    if (source !== "all") {
+    if (sources.length > 0) {
       opportunities = opportunities.flatMap((item) => {
-        const comparisons = item.comparisons.filter((entry) => entry.source === source);
+        const comparisons = item.comparisons.filter((entry) => sources.includes(entry.source));
         const signaled = comparisons.filter((entry): entry is OpportunityComparison & { signal: Signal } => entry.signal != null);
         if (!signaled.length) return [];
         const strongest = signaled.reduce((best, entry) => entry.signal.score > best.signal.score ? entry : best);
@@ -320,33 +317,21 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       });
     }
 
-    if (!["all", "multi_pressure"].includes(type)) {
+    if (types.length > 0) {
       opportunities = opportunities.flatMap((item) => {
-        const matching = item.comparisons.filter((entry): entry is OpportunityComparison & { signal: Signal } => entry.signal?.type === type);
-        if (!matching.length) return [];
-        const strongest = matching.reduce((best, entry) => entry.signal.score > best.signal.score ? entry : best);
+        const matches = item.comparisons.filter((entry): entry is OpportunityComparison & { signal: Signal } =>
+          entry.signal != null && (types.includes(entry.signal.type) ||
+            (types.includes("multi_pressure") && item.pressureCount >= 2 && entry.signal.type === "price_risk")));
+        if (!matches.length) return [];
+        const strongest = matches.reduce((best, entry) => entry.signal.score > best.signal.score ? entry : best);
+        const multiPressure = types.includes("multi_pressure") && item.pressureCount >= 2 && strongest.signal.type === "price_risk";
+        const score = multiPressure ? Math.min(100, strongest.signal.score + 10) : strongest.signal.score;
         return [{
           ...item,
           primary: {
-            ...strongest.signal, source: strongest.source, sourceName: strongest.sourceName,
-            differenceUsd: strongest.differenceUsd, differencePct: strongest.differencePct
-          },
-          detectedAt: strongest.competitor.scrapedAt
-        }];
-      });
-    }
-    if (type === "multi_pressure") {
-      opportunities = opportunities.flatMap((item) => {
-        if (item.pressureCount < 2) return [];
-        const risks = item.comparisons.filter((entry): entry is OpportunityComparison & { signal: Signal } => entry.signal?.type === "price_risk");
-        const strongest = risks.reduce((best, entry) => entry.signal.score > best.signal.score ? entry : best);
-        const score = Math.min(100, strongest.signal.score + 10);
-        return [{
-          ...item,
-          primary: {
-            ...strongest.signal, score, priority: priorityForScore(score),
-            label: "Presión multicompetidor",
-            explanation: `${item.pressureCount} competidores ofrecen actualmente un precio inferior al de DAKA.`,
+            ...strongest.signal, score, priority: multiPressure ? priorityForScore(score) : strongest.signal.priority,
+            label: multiPressure ? "Presión multicompetidor" : strongest.signal.label,
+            explanation: multiPressure ? `${item.pressureCount} competidores ofrecen actualmente un precio inferior al de DAKA.` : strongest.signal.explanation,
             source: strongest.source, sourceName: strongest.sourceName,
             differenceUsd: strongest.differenceUsd, differencePct: strongest.differencePct
           },
@@ -355,7 +340,6 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       });
     }
 
-    const normalizedCategory = category.toLowerCase();
     opportunities = opportunities.filter((item) => {
       const relevantComparisons = item.comparisons;
       if (!relevantComparisons.some((entry) => entry.signal)) return false;
@@ -364,15 +348,13 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
         .filter(Boolean).join(" ").toLowerCase();
       if (search && !searchable.includes(search)) return false;
       if (!matchesSelectedBrands(brands, [item.daka.brand, ...relevantComparisons.map((entry) => entry.competitor.brand)])) return false;
-      if (normalizedCategory && ![item.daka.category, ...relevantComparisons.map((entry) => entry.competitor.category)]
-        .some((value) => value?.trim().toLowerCase() === normalizedCategory)) return false;
-      if (type === "multi_pressure" && item.pressureCount < 2) return false;
-      if (type !== "all" && type !== "multi_pressure" && !relevantComparisons.some((entry) => entry.signal?.type === type)) return false;
-      if (priority !== "all" && item.primary.priority !== priority) return false;
-      if (availability === "daka_available" && item.daka.inStock !== true) return false;
-      if (availability === "daka_unavailable" && item.daka.inStock !== false) return false;
-      if (availability === "competitor_available" && !relevantComparisons.some((entry) => entry.competitor.inStock === true)) return false;
-      if (availability === "competitor_unavailable" && !relevantComparisons.some((entry) => entry.competitor.inStock === false)) return false;
+      if (!matchesOpportunitySelection(categories, [item.daka.category, ...relevantComparisons.map((entry) => entry.competitor.category)])) return false;
+      if (priorities.length > 0 && !priorities.includes(item.primary.priority)) return false;
+      if (availabilities.length > 0 && !availabilities.some((value) =>
+        (value === "daka_available" && item.daka.inStock === true) ||
+        (value === "daka_unavailable" && item.daka.inStock === false) ||
+        (value === "competitor_available" && relevantComparisons.some((entry) => entry.competitor.inStock === true)) ||
+        (value === "competitor_unavailable" && relevantComparisons.some((entry) => entry.competitor.inStock === false)))) return false;
       return true;
     });
 
@@ -387,7 +369,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
     };
     const availableBrands = distinctBrands(rows.flatMap((row) => [row.daka_brand, row.competitor_brand]))
       .sort((a, b) => a.localeCompare(b, "es"));
-    const categories = Array.from(new Set(rows.flatMap((row) => [row.daka_category, row.competitor_category]).filter((value): value is string => Boolean(value?.trim()))))
+    const availableCategories = distinctSelections(rows.flatMap((row) => [row.daka_category, row.competitor_category]))
       .sort((a, b) => a.localeCompare(b, "es"));
 
     opportunities.sort((a, b) => compareOpportunities(a, b, sort));
@@ -398,7 +380,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
     return {
       items, total: opportunities.length, offset: pageOffset, limit: pageLimit,
       hasMore: !includeAll && pageOffset + items.length < opportunities.length,
-      minimumGap, stats, brands: availableBrands, categories,
+      minimumGap, stats, brands: availableBrands, categories: availableCategories,
       freshnessHours: 48,
       generatedAt: new Date().toISOString()
     };

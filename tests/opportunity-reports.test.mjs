@@ -11,8 +11,8 @@ import {
 } from "../lib/opportunity-reports.ts";
 
 const query = {
-  search: "tv", source: "all", brands: ["Samsung"], category: "Televisores",
-  type: "all", priority: "all", availability: "all", minimumGap: 5,
+  search: "tv", sources: [], brands: ["Samsung"], categories: ["Televisores"],
+  types: [], priorities: [], availabilities: [], minimumGap: 5,
   sort: "gap_pct_desc", limit: 50, offset: 0
 };
 
@@ -91,6 +91,25 @@ test("Excel, PDF y Telegram identifican todas las marcas seleccionadas", async (
   const pdf = await buildOpportunityPdf(page, multiple);
   assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
   assert.match(buildOpportunityTelegramCaption(page, multiple), /Samsung, LG/);
+});
+
+test("Excel, PDF y Telegram incluyen los demás filtros múltiples", async () => {
+  const multiple = {
+    ...query, sources: ["damasco", "ivoo"], categories: ["Televisores", "Audio"],
+    types: ["price_risk", "availability_advantage"], priorities: ["critical", "high"],
+    availabilities: ["daka_available", "competitor_unavailable"]
+  };
+  const filters = describeOpportunityFilters(multiple);
+  assert.match(filters, /Competidores: Damasco, IVOO/);
+  assert.match(filters, /Categorías: Televisores, Audio/);
+  assert.match(filters, /Tipos: Riesgo de precio, Ventaja de disponibilidad/);
+  assert.match(filters, /Prioridades: Crítica, Alta/);
+  assert.match(filters, /Disponibilidad: DAKA disponible, Competidor sin disponibilidad/);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await buildOpportunityExcel(page, multiple));
+  assert.equal(workbook.getWorksheet("Resumen").getCell("B3").value, filters);
+  assert.equal((await buildOpportunityPdf(page, multiple)).subarray(0, 4).toString(), "%PDF");
+  assert.match(buildOpportunityTelegramCaption(page, multiple), /Damasco, IVOO/);
 });
 
 test("Nombre del archivo usa una extensión aprobada", () => {

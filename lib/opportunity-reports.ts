@@ -55,12 +55,12 @@ function primaryComparison(item: Opportunity) {
 export function describeOpportunityFilters(query: OpportunityQuery) {
   return [
     query.search && `Búsqueda: ${query.search}`,
-    query.source !== "all" && `Competidor: ${SOURCE_LABELS[query.source] ?? query.source}`,
+    query.sources.length > 0 && `Competidores: ${query.sources.map((value) => SOURCE_LABELS[value] ?? value).join(", ")}`,
     query.brands.length > 0 && `Marcas: ${query.brands.join(", ")}`,
-    query.category && `Categoría: ${query.category}`,
-    query.type !== "all" && `Tipo: ${TYPE_LABELS[query.type] ?? query.type}`,
-    query.priority !== "all" && `Prioridad: ${PRIORITY_LABELS[query.priority] ?? query.priority}`,
-    query.availability !== "all" && `Disponibilidad: ${AVAILABILITY_LABELS[query.availability] ?? query.availability}`,
+    query.categories.length > 0 && `Categorías: ${query.categories.join(", ")}`,
+    query.types.length > 0 && `Tipos: ${query.types.map((value) => TYPE_LABELS[value] ?? value).join(", ")}`,
+    query.priorities.length > 0 && `Prioridades: ${query.priorities.map((value) => PRIORITY_LABELS[value] ?? value).join(", ")}`,
+    query.availabilities.length > 0 && `Disponibilidad: ${query.availabilities.map((value) => AVAILABILITY_LABELS[value] ?? value).join(", ")}`,
     `Brecha mínima: ${query.minimumGap}%`
   ].filter(Boolean).join(" · ");
 }

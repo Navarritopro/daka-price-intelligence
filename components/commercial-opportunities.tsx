@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { readApiJson } from "@/lib/api-client";
 import { useAccessibleDialog } from "@/hooks/use-accessible-dialog";
 import OpportunityBrandFilter from "@/components/opportunity-brand-filter";
+import OpportunityMultiFilter from "@/components/opportunity-multi-filter";
 
 type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type OpportunityType = "price_risk" | "price_advantage" | "availability_risk" | "availability_advantage" | "stale_data";
@@ -89,6 +90,20 @@ const COMPETITORS: Record<CompetitorSource, string> = {
   venelectronics: "Venelectronics",
   soytechno: "SoyTechno"
 };
+const TYPES = [
+  { value: "price_risk", label: "Riesgo de precio" }, { value: "price_advantage", label: "Ventaja de precio" },
+  { value: "availability_risk", label: "Riesgo de disponibilidad" }, { value: "availability_advantage", label: "Ventaja de disponibilidad" },
+  { value: "multi_pressure", label: "Presión multicompetidor" }, { value: "stale_data", label: "Datos por actualizar" }
+];
+const PRIORITIES = [
+  { value: "critical", label: "Crítica" }, { value: "high", label: "Alta" },
+  { value: "medium", label: "Media" }, { value: "informative", label: "Informativa" }
+];
+const AVAILABILITIES = [
+  { value: "daka_available", label: "DAKA disponible" }, { value: "daka_unavailable", label: "DAKA sin disponibilidad" },
+  { value: "competitor_available", label: "Competidor disponible" }, { value: "competitor_unavailable", label: "Competidor sin disponibilidad" }
+];
+const COMPETITOR_OPTIONS = Object.entries(COMPETITORS).map(([value, label]) => ({ value, label }));
 const EMPTY_STATS: OpportunityStats = {
   total: 0, prioritized: 0, priceRisks: 0, priceAdvantages: 0,
   availabilityRisks: 0, availabilityAdvantages: 0, stale: 0
@@ -126,12 +141,12 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
   const [categories, setCategories] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [source, setSource] = useState("all");
+  const [sources, setSources] = useState<string[]>([]);
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-  const [category, setCategory] = useState("");
-  const [type, setType] = useState("all");
-  const [priority, setPriority] = useState("all");
-  const [availability, setAvailability] = useState("all");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
+  const [priorities, setPriorities] = useState<string[]>([]);
+  const [availabilities, setAvailabilities] = useState<string[]>([]);
   const [minimumGap, setMinimumGap] = useState("5");
   const [sort, setSort] = useState<OpportunitySort>("priority");
   const [total, setTotal] = useState(0);
@@ -156,11 +171,16 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
   const parameters = useCallback((offset: number) => {
     const params = new URLSearchParams({
       limit: String(BATCH_SIZE), offset: String(offset), search: debouncedSearch,
-      source, category, type, priority, availability, minimumGap, sort
+      minimumGap, sort
     });
     selectedBrands.forEach((brand) => params.append("brand", brand));
+    sources.forEach((value) => params.append("source", value));
+    selectedCategories.forEach((value) => params.append("category", value));
+    types.forEach((value) => params.append("type", value));
+    priorities.forEach((value) => params.append("priority", value));
+    availabilities.forEach((value) => params.append("availability", value));
     return params;
-  }, [availability, selectedBrands, category, debouncedSearch, minimumGap, priority, sort, source, type]);
+  }, [availabilities, selectedBrands, selectedCategories, debouncedSearch, minimumGap, priorities, sort, sources, types]);
 
   const reportParameters = useCallback(() => {
     const values = parameters(0);
@@ -268,12 +288,12 @@ export default function CommercialOpportunities({ canAdmin = false }: { canAdmin
 
     <div className="opportunity-filters" data-tour="opportunity-filters">
       <input aria-label="Buscar oportunidad" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, SAP, marca o referencia"/>
-      <select aria-label="Competidor" value={source} onChange={(event) => { setSource(event.target.value); setSelectedBrands([]); setCategory(""); }}><option value="all">Todos los competidores</option>{Object.entries(COMPETITORS).map(([slug, name]) => <option key={slug} value={slug}>{name}</option>)}</select>
+      <OpportunityMultiFilter label="competidores" allLabel="Todos los competidores" options={COMPETITOR_OPTIONS} selected={sources} onChange={(values) => { setSources(values); setSelectedBrands([]); setSelectedCategories([]); }}/>
       <OpportunityBrandFilter options={brands} selected={selectedBrands} onChange={setSelectedBrands}/>
-      <select aria-label="Categoría" value={category} onChange={(event) => setCategory(event.target.value)}><option value="">Todas las categorías</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-      <select aria-label="Tipo de oportunidad" value={type} onChange={(event) => setType(event.target.value)}><option value="all">Todos los tipos</option><option value="price_risk">Riesgo de precio</option><option value="price_advantage">Ventaja de precio</option><option value="availability_risk">Riesgo de disponibilidad</option><option value="availability_advantage">Ventaja de disponibilidad</option><option value="multi_pressure">Presión multicompetidor</option><option value="stale_data">Datos por actualizar</option></select>
-      <select aria-label="Prioridad" value={priority} onChange={(event) => setPriority(event.target.value)}><option value="all">Todas las prioridades</option><option value="critical">Crítica</option><option value="high">Alta</option><option value="medium">Media</option><option value="informative">Informativa</option></select>
-      <select aria-label="Disponibilidad" value={availability} onChange={(event) => setAvailability(event.target.value)}><option value="all">Cualquier disponibilidad</option><option value="daka_available">DAKA disponible</option><option value="daka_unavailable">DAKA sin disponibilidad</option><option value="competitor_available">Competidor disponible</option><option value="competitor_unavailable">Competidor sin disponibilidad</option></select>
+      <OpportunityMultiFilter label="categorías" allLabel="Todas las categorías" options={categories.map((value) => ({ value, label: value }))} selected={selectedCategories} onChange={setSelectedCategories}/>
+      <OpportunityMultiFilter label="tipos" allLabel="Todos los tipos" options={TYPES} selected={types} onChange={setTypes}/>
+      <OpportunityMultiFilter label="prioridades" allLabel="Todas las prioridades" options={PRIORITIES} selected={priorities} onChange={setPriorities}/>
+      <OpportunityMultiFilter label="disponibilidad" allLabel="Cualquier disponibilidad" options={AVAILABILITIES} selected={availabilities} onChange={setAvailabilities}/>
       <select aria-label="Brecha mínima" value={minimumGap} onChange={(event) => setMinimumGap(event.target.value)}><option value="5">Brecha mínima 5%</option><option value="10">Brecha mínima 10%</option><option value="15">Brecha mínima 15%</option><option value="20">Brecha mínima 20%</option></select>
       <select aria-label="Orden de oportunidades" value={sort} onChange={(event) => setSort(event.target.value as OpportunitySort)}><option value="priority">Prioridad comercial</option><option value="competitor_asc">Competencia A–Z</option><option value="competitor_desc">Competencia Z–A</option><option value="gap_usd_desc">Mayor brecha USD</option><option value="gap_usd_asc">Menor brecha USD</option><option value="gap_pct_desc">Mayor brecha %</option><option value="gap_pct_asc">Menor brecha %</option></select>
     </div>
