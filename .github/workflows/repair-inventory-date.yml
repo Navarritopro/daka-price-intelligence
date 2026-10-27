@@ -1,0 +1,32 @@
+name: Corregir fecha del inventario vigente
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repair-inventory-date
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.TEMP_DATABASE_URL || secrets.DATABASE_URL }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Corregir fecha desde la publicación original
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}" || { echo "Falta TEMP_DATABASE_URL o DATABASE_URL"; exit 1; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/repair_latest_inventory_date.sql
+      - name: Mostrar fecha vigente
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT effective_date AS fecha_inventario FROM daka_inventory_snapshots ORDER BY effective_date DESC, created_at DESC LIMIT 1;"
