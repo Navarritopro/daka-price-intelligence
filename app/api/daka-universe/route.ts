@@ -86,9 +86,10 @@ export async function GET(request: NextRequest) {
       LIMIT ${limit} OFFSET ${offset}
     `;
     const [stats] = await sql`
-      WITH latest AS (SELECT id FROM daka_inventory_snapshots ORDER BY effective_date DESC, created_at DESC LIMIT 1),
+      WITH latest AS (SELECT id, effective_date FROM daka_inventory_snapshots ORDER BY effective_date DESC, created_at DESC LIMIT 1),
       totals AS (SELECT sku, SUM(quantity_raw)::numeric total FROM daka_inventory_by_location WHERE snapshot_id = (SELECT id FROM latest) GROUP BY sku)
-      SELECT COUNT(*)::int AS total,
+      SELECT (SELECT effective_date FROM latest) AS inventory_effective_date,
+        COUNT(*)::int AS total,
         COUNT(*) FILTER (WHERE m.master_present)::int AS master_count,
         COUNT(*) FILTER (WHERE NOT m.master_present)::int AS pending_card,
         COUNT(*) FILTER (WHERE NOT m.active)::int AS inactive,
@@ -113,6 +114,7 @@ export async function GET(request: NextRequest) {
         ARRAY(SELECT DISTINCT CASE WHEN brand = '- Ningun Fabricante -' THEN 'Sin marca definida' ELSE brand END FROM daka_sku_master ORDER BY 1) AS brands
     `;
     return NextResponse.json({
+      inventoryEffectiveDate: stats?.inventory_effective_date ?? null,
       items: rows.map((row) => ({
         sku: row.sku, line: row.line, family: row.family, subfamily: row.subfamily, brand: row.brand,
         description: row.description, masterPresent: row.master_present, active: row.active,

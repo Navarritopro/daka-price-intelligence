@@ -1,7 +1,13 @@
 import ExcelJS from "exceljs";
 
 export const DAKA_CARD_PERIOD = "2026-10-01";
-export const DAKA_INVENTORY_EFFECTIVE_DATE = "2026-10-12";
+export function inventoryPublicationDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Caracas", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(now);
+  const value = (type: string) => parts.find(part => part.type === type)!.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
 
 export type DakaCard = {
   raw: string;

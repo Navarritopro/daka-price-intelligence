@@ -5,7 +5,7 @@ import { getSql } from "@/lib/db";
 import { MAX_UNIVERSE_FILE_BYTES, readBoundedBody, validateUniverseFileSize } from "@/lib/universe-upload-limits";
 import {
   DAKA_CARD_PERIOD,
-  DAKA_INVENTORY_EFFECTIVE_DATE,
+  inventoryPublicationDate,
   parseInventoryWorkbook,
   parseMasterWorkbook,
   parsePriceListWorkbook,
@@ -130,6 +130,7 @@ async function publishMaster(rows: MasterRow[], filename: string, checksum: stri
 
 async function publishInventory(rows: InventoryRow[], filename: string, checksum: string, user: { id: string; email: string }) {
   const sql = getSql();
+  const effectiveDate = inventoryPublicationDate();
   const batchId = randomUUID();
   const snapshotId = randomUUID();
   const provisional = new Map<string, InventoryRow>();
@@ -138,7 +139,7 @@ async function publishInventory(rows: InventoryRow[], filename: string, checksum
     await tx`
       INSERT INTO daka_import_batches
         (id, file_type, filename, checksum_sha256, effective_date, row_count, unique_skus, warning_count, imported_by, imported_by_email)
-      VALUES (${batchId}, 'inventory', ${filename}, ${checksum}, ${DAKA_INVENTORY_EFFECTIVE_DATE}::date,
+      VALUES (${batchId}, 'inventory', ${filename}, ${checksum}, ${effectiveDate}::date,
         ${rows.length}, ${provisional.size}, ${rows.filter((row) => row.quantity < 0).length}, ${user.id}::uuid, ${user.email})
     `;
     for (const part of chunks([...provisional.values()])) {
@@ -155,7 +156,7 @@ async function publishInventory(rows: InventoryRow[], filename: string, checksum
         ON CONFLICT (sku) DO UPDATE SET subfamily = COALESCE(EXCLUDED.subfamily, daka_sku_master.subfamily), updated_at = NOW()
       `;
     }
-    await tx`INSERT INTO daka_inventory_snapshots (id, effective_date, source_batch_id) VALUES (${snapshotId}, ${DAKA_INVENTORY_EFFECTIVE_DATE}::date, ${batchId}::uuid)`;
+    await tx`INSERT INTO daka_inventory_snapshots (id, effective_date, source_batch_id) VALUES (${snapshotId}, ${effectiveDate}::date, ${batchId}::uuid)`;
     const locations = [...new Set(rows.map((row) => row.location))];
     for (const part of chunks(locations)) {
       const payload = part.map((name) => ({ name, type: name.toUpperCase() === "CDD" ? "cdd" : "store" }));
