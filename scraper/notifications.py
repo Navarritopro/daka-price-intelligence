@@ -5,21 +5,38 @@ import os
 import re
 import smtplib
 import sys
+from decimal import Decimal, ROUND_HALF_UP
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import requests
 
 
-def build_messages(alerts: list[dict]) -> tuple[str, str]:
+def build_messages(alerts: list[dict], *, daka_discount_percentage: int = 0) -> tuple[str, str]:
+    if type(daka_discount_percentage) is not int or not 0 <= daka_discount_percentage <= 99:
+        raise ValueError("Descuento DAKA fuera del rango permitido")
+    displayed = alerts
+    if daka_discount_percentage:
+        factor = Decimal(100 - daka_discount_percentage) / Decimal(100)
+        displayed = []
+        for original in alerts:
+            old = (Decimal(str(original["old_price_usd"])) * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            new = (Decimal(str(original["new_price_usd"])) * factor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            change = ((new - old) / old * Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if old > 0 else None
+            displayed.append({**original, "old_price_usd": old, "new_price_usd": new, "change_pct": change})
     text_lines = [f"🔔 DAKA · {len(alerts)} cambios de precio detectados", ""]
+    note = f"DAKA web: descuento -{daka_discount_percentage}%; histórico guardado original. Base Otras sin ajuste." if daka_discount_percentage else ""
+    if note:
+        text_lines.insert(1, note)
     html_rows = []
-    for item in alerts:
-        direction = "📉" if item["change_pct"] < 0 else "📈"
+    for item in displayed:
+        change = item["change_pct"]
+        direction = "📉" if change is not None and change < 0 else "📈" if change is not None and change > 0 else "↔"
+        variation = f"{change:+.2f}%" if change is not None else "sin base comparable"
         text_lines.append(
             f"{direction} {item['external_id']} · {item['name']}\n"
             f"${item['old_price_usd']:.2f} → ${item['new_price_usd']:.2f} "
-            f"({item['change_pct']:+.2f}%)\n{item['url']}"
+            f"({variation})\n{item['url']}"
         )
         html_rows.append(
             "<tr>"
@@ -27,11 +44,12 @@ def build_messages(alerts: list[dict]) -> tuple[str, str]:
             f"<td><a href=\"{html.escape(item['url'])}\">{html.escape(item['name'])}</a></td>"
             f"<td>${item['old_price_usd']:.2f}</td>"
             f"<td>${item['new_price_usd']:.2f}</td>"
-            f"<td>{item['change_pct']:+.2f}%</td>"
+            f"<td>{html.escape(variation)}</td>"
             "</tr>"
         )
     html_message = (
         "<h2>Alertas de precios Daka</h2>"
+        f"<p>{html.escape(note)}</p>"
         f"<p>Se detectaron <strong>{len(alerts)}</strong> variaciones sobre el umbral configurado.</p>"
         "<table cellpadding='8' cellspacing='0' border='1' style='border-collapse:collapse'>"
         "<thead><tr><th>SAP</th><th>Producto</th><th>Anterior</th><th>Actual</th><th>Variación</th></tr></thead>"

@@ -6,7 +6,7 @@ import { readApiJson } from "@/lib/api-client";
 type CompetitorSource = "damasco" | "multimax" | "ivoo" | "venelectronics" | "soytechno";
 type Product = { id: number; externalId: string; name: string; category?: string | null; url: string; price: number; inStock: boolean | null };
 type HistoryItem = {
-  adjustmentPercentage?: number;
+  adjustmentPercentage?: number; dakaAdjustmentPercentage?: number;
   matchId: number; daka: Product; competitor: Product; captureDays: number;
   dakaLowerDays: number; competitorLowerDays: number; equalDays: number; leadershipChanges: number;
   firstDate: string; latestDate: string; firstDakaPrice: number; firstCompetitorPrice: number;
@@ -207,8 +207,8 @@ export default function CompetitorHistory({ source, competitorName }: { source: 
       const response = await fetch(`/api/comparison-history?${exportParameters}`, { cache: "no-store" });
       const page = await readApiJson<Page>(response, "No fue posible preparar la exportación");
       if (!response.ok) throw new Error(page.error);
-      const headers = ["Desde", "Hasta", "SAP DAKA", "Producto DAKA", "Categoría", "Competidor", "Referencia competidor", "Precio DAKA", `Precio ${competitorName}`, "Brecha USD actual", "Brecha % inicial", "Brecha % actual", "Cambio en puntos porcentuales", "Evolución competitiva", "Días del período", "Días comparables", "Días ventaja DAKA", `Días ventaja ${competitorName}`, "Días mismo precio", "Cambios de liderazgo", "Incremento Venelectronics vigente %"];
-      const lines = [headers.map(csvCell).join(","), ...page.items.map((item) => [page.period.startDate, page.period.endDate, item.daka.externalId, item.daka.name, item.daka.category ?? "", competitorName, item.competitor.externalId, item.daka.price.toFixed(2), item.competitor.price.toFixed(2), item.latestGapUsd.toFixed(2), item.firstGapPct.toFixed(2), item.latestGapPct.toFixed(2), item.gapChangePct.toFixed(2), evolutionSummary(item, competitorName).title, page.period.totalDays, item.captureDays, item.dakaLowerDays, item.competitorLowerDays, item.equalDays, item.leadershipChanges, item.adjustmentPercentage ?? 0].map(csvCell).join(","))];
+      const headers = ["Desde", "Hasta", "SAP DAKA", "Producto DAKA", "Categoría", "Competidor", "Referencia competidor", "Precio DAKA", `Precio ${competitorName}`, "Brecha USD actual", "Brecha % inicial", "Brecha % actual", "Cambio en puntos porcentuales", "Evolución competitiva", "Días del período", "Días comparables", "Días ventaja DAKA", `Días ventaja ${competitorName}`, "Días mismo precio", "Cambios de liderazgo", "Incremento Venelectronics vigente %", "Ajuste DAKA web vigente %"];
+      const lines = [headers.map(csvCell).join(","), ...page.items.map((item) => [page.period.startDate, page.period.endDate, item.daka.externalId, item.daka.name, item.daka.category ?? "", competitorName, item.competitor.externalId, item.daka.price.toFixed(2), item.competitor.price.toFixed(2), item.latestGapUsd.toFixed(2), item.firstGapPct.toFixed(2), item.latestGapPct.toFixed(2), item.gapChangePct.toFixed(2), evolutionSummary(item, competitorName).title, page.period.totalDays, item.captureDays, item.dakaLowerDays, item.competitorLowerDays, item.equalDays, item.leadershipChanges, item.adjustmentPercentage ?? 0, item.dakaAdjustmentPercentage ?? 0].map(csvCell).join(","))];
       const blob = new Blob(["\uFEFF" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");

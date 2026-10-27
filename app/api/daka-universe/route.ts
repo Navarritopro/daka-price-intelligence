@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
         LEFT JOIN latest_snapshot ls ON TRUE
         LEFT JOIN sources src ON src.slug = 'daka'
         LEFT JOIN products p ON p.source_id = src.id AND p.external_id = m.sku
-        LEFT JOIN price_history web_price ON web_price.product_id = p.id AND web_price.job_id = (SELECT id FROM latest_daka_job)
+        LEFT JOIN display_price_history web_price ON web_price.product_id = p.id AND web_price.job_id = (SELECT id FROM latest_daka_job)
         LEFT JOIN latest_price_snapshot lps ON TRUE
         LEFT JOIN daka_price_items list_price ON list_price.snapshot_id = lps.id AND list_price.sku = m.sku
       ), filtered AS (

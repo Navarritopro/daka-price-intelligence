@@ -233,15 +233,21 @@ def main() -> int:
         alerts = database.create_alerts(job_id, threshold)
         emailed = telegram_sent = False
         if alerts:
-            text_message, html_message = build_messages(alerts)
             try:
-                telegram_sent = send_telegram(text_message)
-            except Exception as exc:  # alert failure must not invalidate captured prices
-                scraper.log(f"Error en Telegram: {exc}", "warning")
-            try:
-                emailed = send_email(html_message, len(alerts))
+                discount = database.get_daka_display_discount()
+                text_message, html_message = build_messages(alerts, daka_discount_percentage=discount)
             except Exception as exc:
-                scraper.log(f"Error en correo: {exc}", "warning")
+                # Un problema de presentación de alertas no invalida los datos capturados.
+                scraper.log(f"No fue posible preparar las alertas con el ajuste vigente: {exc}", "warning")
+            else:
+                try:
+                    telegram_sent = send_telegram(text_message)
+                except Exception as exc:
+                    scraper.log(f"Error en Telegram: {exc}", "warning")
+                try:
+                    emailed = send_email(html_message, len(alerts))
+                except Exception as exc:
+                    scraper.log(f"Error en correo: {exc}", "warning")
             database.update_alert_channels([row["id"] for row in alerts], emailed, telegram_sent)
         scraper.log(f"Histórico guardado: {saved} productos; alertas: {len(alerts)}", "ok")
         try:

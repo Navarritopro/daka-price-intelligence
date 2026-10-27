@@ -11,3 +11,6 @@
 .controls :focus-visible { outline: 3px solid #003288; outline-offset: 3px; }
 .panel .error { color: #9c1828; }
 @media (max-width: 640px) { .controls { align-items: stretch; flex-direction: column; } .controls label { flex-wrap: wrap; } .panel { padding: 14px; } }
+
+.daka { background: #fffbe6; border-color: #ffcd00; }
+.daka strong { color: #003288; }

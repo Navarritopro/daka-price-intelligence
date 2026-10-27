@@ -83,9 +83,11 @@ function styleHeader(row: ExcelJS.Row) {
 }
 
 function adjustmentLabel(page: OpportunityPage) {
-  return page.priceAdjustmentPercentage
+  const venelectronics = page.priceAdjustmentPercentage
     ? `Venelectronics +${page.priceAdjustmentPercentage}% sobre precio web; historico guardado original.`
     : "Venelectronics: precios web sin ajuste.";
+  const daka = page.dakaDiscountPercentage ? `DAKA web -${page.dakaDiscountPercentage}%; Base Otras sin ajuste.` : "DAKA web sin descuento.";
+  return `${daka} ${venelectronics}`;
 }
 
 export async function buildOpportunityExcel(page: OpportunityPage, query: OpportunityQuery) {
@@ -107,7 +109,7 @@ export async function buildOpportunityExcel(page: OpportunityPage, query: Opport
     ["Riesgos de disponibilidad", page.stats.availabilityRisks],
     ["Ventajas de disponibilidad", page.stats.availabilityAdvantages],
     ["Datos por actualizar", page.stats.stale],
-    ["Ajuste de Venelectronics", adjustmentLabel(page)],
+    ["Ajustes de precios web", adjustmentLabel(page)],
     ["Metodología", "Última ejecución exitosa de DAKA contra la última ejecución exitosa de cada competidor. La señal apoya la revisión comercial y no asume margen ni recomienda descuentos automáticamente."]
   ];
   summary.addRows(summaryRows);

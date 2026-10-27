@@ -77,6 +77,19 @@ class CompetitorPriceReportTests(unittest.TestCase):
         self.assertIn("histórico guardado original", message)
         self.assertNotIn("Precios ajustados", build_source_report("Venelectronics", current, previous, result, 0))
 
+    def test_daka_report_identifies_discount_and_preserves_base_otras_scope(self):
+        timezone = ZoneInfo("America/Caracas")
+        current = {"captured_at": datetime(2026, 10, 27, 9, tzinfo=timezone)}
+        previous = {"captured_at": datetime(2026, 10, 26, 9, tzinfo=timezone)}
+        result = calculate_changes(
+            [{"product_id": 1, "external_id": "DAKA-1", "name": "Producto", "price_usd": Decimal("225")}],
+            [{"product_id": 1, "external_id": "DAKA-1", "name": "Producto", "price_usd": Decimal("234")}],
+        )
+        message = build_source_report("DAKA", current, previous, result, 0, 10)
+        self.assertIn("DAKA web: descuento -10%", message)
+        self.assertIn("Base Otras sin ajuste", message)
+        self.assertIn("$234.00 → $225.00", message)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,7 +43,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sk
       )
       SELECT p.id, p.url, p.active, ph.price_usd, ph.in_stock, ph.scraped_at
       FROM products p JOIN sources s ON s.id = p.source_id AND s.slug = 'daka'
-      LEFT JOIN price_history ph ON ph.product_id = p.id AND ph.job_id = (SELECT id FROM latest_job)
+      LEFT JOIN display_price_history ph ON ph.product_id = p.id AND ph.job_id = (SELECT id FROM latest_job)
       WHERE p.external_id = ${product.sku} LIMIT 1
     `;
     return NextResponse.json({

@@ -97,7 +97,7 @@ def build_report_url(app_base_url: str, source: str, current_job: str, previous_
     return f"{app_base_url.rstrip('/')}?{query}"
 
 
-def build_source_report(display_name: str, current_job: dict, previous_job: dict, result: dict, adjustment_percentage: int = 0) -> str:
+def build_source_report(display_name: str, current_job: dict, previous_job: dict, result: dict, adjustment_percentage: int = 0, daka_discount_percentage: int = 0) -> str:
     current_at = current_job["captured_at"].astimezone(VENEZUELA_TZ)
     previous_at = previous_job["captured_at"].astimezone(VENEZUELA_TZ)
     lines = [
@@ -109,6 +109,8 @@ def build_source_report(display_name: str, current_job: dict, previous_job: dict
         f"🆕 Nuevos: {result['new_products']} · 👻 No reportados: {result['missing_products']}",
         "",
     ]
+    if daka_discount_percentage:
+        lines.insert(2, f"DAKA web: descuento -{daka_discount_percentage}%; histórico guardado original. Base Otras sin ajuste.")
     if adjustment_percentage:
         lines.insert(2, f"Precios ajustados +{adjustment_percentage}% sobre la web; histórico guardado original.")
     if result["changes"]:
@@ -128,10 +130,12 @@ def build_source_report(display_name: str, current_job: dict, previous_job: dict
 
 
 def build_reports(connection, report_date, app_base_url: str) -> tuple[str, list[dict], bool]:
-    setting = connection.execute(
-        "SELECT enabled, percentage FROM price_display_adjustments WHERE source_slug = 'venelectronics'"
-    ).fetchone()
-    adjustment_percentage = int(setting["percentage"]) if setting and setting["enabled"] else 0
+    settings = connection.execute(
+        "SELECT source_slug, enabled, percentage FROM price_display_adjustments WHERE source_slug IN ('venelectronics', 'daka')"
+    ).fetchall()
+    active = {row["source_slug"]: int(row["percentage"]) for row in settings if row["enabled"]}
+    adjustment_percentage = active.get("venelectronics", 0)
+    daka_discount_percentage = active.get("daka", 0)
     source_reports = []
     summary_lines = [
         f"📊 DAKA Price Lab · Resumen diario {report_date:%d/%m/%Y}",
@@ -140,6 +144,8 @@ def build_reports(connection, report_date, app_base_url: str) -> tuple[str, list
     ]
     if adjustment_percentage:
         summary_lines.append(f"Venelectronics: precios ajustados +{adjustment_percentage}% sobre la web; histórico guardado original.")
+    if daka_discount_percentage:
+        summary_lines.append(f"DAKA web: descuento -{daka_discount_percentage}%; histórico guardado original. Base Otras sin ajuste.")
     complete = True
 
     for slug in SOURCES:
@@ -171,7 +177,7 @@ def build_reports(connection, report_date, app_base_url: str) -> tuple[str, list
         source_reports.append({
             "source": slug,
             "name": display_name,
-            "message": build_source_report(display_name, current_job, previous_job, result, adjustment_percentage if slug == "venelectronics" else 0),
+            "message": build_source_report(display_name, current_job, previous_job, result, adjustment_percentage if slug == "venelectronics" else 0, daka_discount_percentage if slug == "daka" else 0),
             "url": build_report_url(app_base_url, slug, current_job["id"], previous_job["id"]),
         })
 

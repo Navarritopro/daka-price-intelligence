@@ -8,28 +8,32 @@ const headers = { "Cache-Control": "no-store" };
 
 export async function GET(request: NextRequest) {
   if (!await getRequestUser(request)) return NextResponse.json({ error: "Sesión requerida" }, { status: 401, headers });
+  const source = request.nextUrl.searchParams.get("source") ?? "venelectronics";
+  if (source !== "daka" && source !== "venelectronics") return NextResponse.json({ error: "Fuente de ajuste inválida" }, { status: 400, headers });
   try {
     const sql = getSql();
-    const [row] = await sql`SELECT enabled, percentage FROM price_display_adjustments WHERE source_slug = 'venelectronics'`;
+    const [row] = await sql`SELECT enabled, percentage FROM price_display_adjustments WHERE source_slug = ${source}`;
     if (!row) throw new Error("Configuración no preparada");
     return NextResponse.json({ enabled: row.enabled, percentage: Number(row.percentage) }, { headers });
   } catch {
-    return NextResponse.json({ error: "Ejecuta primero el workflow Preparar ajuste de precio Venelectronics." }, { status: 503, headers });
+    return NextResponse.json({ error: "Ejecuta primero el workflow de preparación de ajustes de precios en GitHub Actions." }, { status: 503, headers });
   }
 }
 
 export async function PUT(request: NextRequest) {
   const user = await getRequestUser(request);
   if (user?.role !== "admin") return NextResponse.json({ error: "Acceso administrativo requerido" }, { status: 403, headers });
+  const source = request.nextUrl.searchParams.get("source") ?? "venelectronics";
+  if (source !== "daka" && source !== "venelectronics") return NextResponse.json({ error: "Fuente de ajuste inválida" }, { status: 400, headers });
   const origin = request.headers.get("origin");
   if (origin && origin !== request.nextUrl.origin) return NextResponse.json({ error: "Origen no permitido" }, { status: 403, headers });
   let settings;
-  try { settings = parsePriceAdjustment(await request.json()); }
+  try { settings = parsePriceAdjustment(await request.json(), source); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Solicitud inválida" }, { status: 400, headers }); }
   try {
     const sql = getSql();
     const [saved] = await sql`UPDATE price_display_adjustments SET enabled = ${settings.enabled}, percentage = ${settings.percentage}
-      WHERE source_slug = 'venelectronics' RETURNING enabled, percentage`;
+      WHERE source_slug = ${source} RETURNING enabled, percentage`;
     if (!saved) throw new Error("Configuración no preparada");
     return NextResponse.json({ enabled: saved.enabled, percentage: Number(saved.percentage) }, { headers });
   } catch {

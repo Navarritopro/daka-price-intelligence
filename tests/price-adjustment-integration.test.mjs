@@ -87,5 +87,13 @@ test("exporta 1.970 oportunidades con precios ajustados y conserva paginación y
       for (const item of page.items) { assert.equal(item.competitor.price, 275); assert.ok(!seen.has(item.matchId)); seen.add(item.matchId); }
     }
     assert.equal((await db.query("SELECT COUNT(*) n FROM price_history ph JOIN products p ON p.id=ph.product_id JOIN sources s ON s.id=p.source_id WHERE s.slug='venelectronics' AND ph.price_usd<>250")).rows[0].n, 0);
+    await db.exec("UPDATE price_display_adjustments SET enabled=TRUE, percentage=10 WHERE source_slug='daka'");
+    const both = await service.getOpportunityPage(query, true);
+    assert.equal(both.total,1970);
+    assert.equal(both.dakaDiscountPercentage,10);
+    assert.ok(both.items.every(item => item.daka.price === (item.daka.externalId === "DAKA-1" ? 234 : 270)));
+    const combinedBook = new ExcelJS.Workbook();
+    await combinedBook.xlsx.load(await buildOpportunityExcel(both,query));
+    assert.equal(combinedBook.getWorksheet("Oportunidades").rowCount,1972);
   } finally { await db.close(); }
 });

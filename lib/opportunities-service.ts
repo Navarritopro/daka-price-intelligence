@@ -38,6 +38,7 @@ export type OpportunityQuery = {
 
 type PairRow = {
   price_adjustment_percentage: unknown;
+  daka_discount_percentage: unknown;
   match_id: unknown;
   confidence: unknown;
   daka_id: unknown;
@@ -135,6 +136,7 @@ export type OpportunityStats = {
 
 export type OpportunityPage = {
   priceAdjustmentPercentage?: number;
+  dakaDiscountPercentage?: number;
   items: Opportunity[];
   total: number;
   offset: number;
@@ -189,6 +191,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       )
       SELECT
         COALESCE((SELECT CASE WHEN enabled THEN percentage ELSE 0 END FROM price_display_adjustments WHERE source_slug = 'venelectronics'), 0) AS price_adjustment_percentage,
+        COALESCE((SELECT CASE WHEN enabled THEN percentage ELSE 0 END FROM price_display_adjustments WHERE source_slug = 'daka'), 0) AS daka_discount_percentage,
         pm.id AS match_id, pm.confidence,
         d.id AS daka_id, d.external_id AS daka_sap, d.name AS daka_name,
         d.brand AS daka_brand, d.category AS daka_category, d.url AS daka_url,
@@ -382,6 +385,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
 
     return {
       priceAdjustmentPercentage: Number(rows[0]?.price_adjustment_percentage ?? 0),
+      dakaDiscountPercentage: Number(rows[0]?.daka_discount_percentage ?? 0),
       items, total: opportunities.length, offset: pageOffset, limit: pageLimit,
       hasMore: !includeAll && pageOffset + items.length < opportunities.length,
       minimumGap, stats, brands: availableBrands, categories: availableCategories,

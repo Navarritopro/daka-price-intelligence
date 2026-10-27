@@ -17,6 +17,20 @@ class Database:
     def _connect(self):
         return psycopg.connect(self.database_url, row_factory=dict_row)
 
+    def get_daka_display_discount(self) -> int:
+        """Configuración vigente para presentar alertas; no modifica sus datos."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT CASE WHEN enabled THEN percentage ELSE 0 END AS percentage "
+                "FROM price_display_adjustments WHERE source_slug = 'daka'"
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Falta preparar el descuento web DAKA en GitHub Actions")
+        percentage = int(row["percentage"])
+        if not 0 <= percentage <= 99:
+            raise ValueError("Descuento DAKA fuera del rango permitido")
+        return percentage
+
     def create_job(self, trigger_type: str) -> str:
         job_id = str(uuid.uuid4())
         with self._connect() as conn:
