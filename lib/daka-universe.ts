@@ -78,7 +78,8 @@ export function parseDakaCard(value: unknown): DakaCard {
 
 export function splitInventoryArticle(value: unknown) {
   const raw = text(value);
-  const match = /^([A-Z]{1,4}-\d+)\s*-\s*(.+)$/i.exec(raw);
+  // Conserva códigos SAP con prefijo, numéricos y alfanuméricos del archivo fuente.
+  const match = /^([A-Z]{1,4}-\d+|[A-Z0-9]+)\s*-\s*(.+)$/i.exec(raw);
   if (!match) throw new Error(`Artículo sin SKU reconocible: ${raw || "vacío"}`);
   return { sku: match[1].toUpperCase(), description: match[2].trim() };
 }
@@ -147,7 +148,7 @@ export async function parseInventoryWorkbook(buffer: Buffer): Promise<InventoryR
   const columns = {
     article: requiredColumn(headers, ["Articulo Completo"]), line: requiredColumn(headers, ["Linea"]),
     brand: requiredColumn(headers, ["marca"]), family: requiredColumn(headers, ["Familia"]),
-    subfamily: requiredColumn(headers, ["SubFamilia"]), quantity: requiredColumn(headers, ["Inv Tienda con cdd"]),
+    subfamily: requiredColumn(headers, ["SubFamilia"]), quantity: requiredColumn(headers, ["Inv Tienda con cdd", "Inv Tienda con cdd Visual"]),
     location: requiredColumn(headers, ["Sucursal_Display"])
   };
   const rows: InventoryRow[] = [];
