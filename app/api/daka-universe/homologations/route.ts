@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
         SELECT p.id, p.external_id, p.name, p.brand, p.model, p.category, p.url,
           ph.price_usd, ph.in_stock
         FROM products p JOIN sources s ON s.id = p.source_id AND s.slug = ${requestedSource}
-        LEFT JOIN price_history ph ON ph.product_id = p.id AND ph.job_id = (SELECT id FROM latest_job)
+        LEFT JOIN display_price_history ph ON ph.product_id = p.id AND ph.job_id = (SELECT id FROM latest_job)
         WHERE p.active = TRUE
           AND (${normalizedSearch} = '' OR EXISTS (
             SELECT 1
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
           WHERE pm.status IN ('auto', 'confirmed')
         ), latest_matched_prices AS (
           SELECT DISTINCT ON (ph.product_id) ph.product_id, ph.price_usd
-          FROM price_history ph
+          FROM display_price_history ph
           JOIN scraping_jobs j ON j.id = ph.job_id AND j.status = 'success'
           JOIN (SELECT DISTINCT product_id FROM matched_products) mp ON mp.product_id = ph.product_id
           WHERE ph.price_usd IS NOT NULL
@@ -198,7 +198,7 @@ export async function GET(request: NextRequest) {
       FROM daka_universe_matches um JOIN sources s ON s.id = um.source_id
       LEFT JOIN products p ON p.id = um.competitor_product_id
       LEFT JOIN LATERAL (
-        SELECT ph.price_usd, ph.in_stock FROM price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
+        SELECT ph.price_usd, ph.in_stock FROM display_price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
         WHERE ph.product_id = p.id AND j.status = 'success' ORDER BY ph.scraped_at DESC LIMIT 1
       ) latest ON TRUE
       WHERE um.sku IN ${sql(skus)} AND um.status IN ('confirmed', 'no_applicable')
@@ -209,7 +209,7 @@ export async function GET(request: NextRequest) {
       FROM product_matches pm JOIN products dp ON dp.id = pm.daka_product_id
       JOIN products cp ON cp.id = pm.competitor_product_id JOIN sources s ON s.id = cp.source_id
       LEFT JOIN LATERAL (
-        SELECT ph.price_usd, ph.in_stock FROM price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
+        SELECT ph.price_usd, ph.in_stock FROM display_price_history ph JOIN scraping_jobs j ON j.id = ph.job_id
         WHERE ph.product_id = cp.id AND j.status = 'success' ORDER BY ph.scraped_at DESC LIMIT 1
       ) latest ON TRUE
       WHERE dp.external_id IN ${sql(skus)} AND pm.status IN ('auto', 'confirmed')

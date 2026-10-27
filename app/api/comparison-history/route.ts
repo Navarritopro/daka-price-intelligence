@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
           d.brand AS daka_brand, d.category, d.url AS daka_url,
           c.id AS competitor_product_id, c.external_id AS competitor_reference,
           c.name AS competitor_name, c.brand AS competitor_brand, c.url AS competitor_url,
-          dp.price_usd AS daka_price, cp.price_usd AS competitor_price,
+          dp.price_usd AS daka_price, cp.price_usd AS competitor_price, cp.adjustment_percentage,
           dp.in_stock AS daka_in_stock, cp.in_stock AS competitor_in_stock,
           dp.price_usd - cp.price_usd AS gap_usd,
           ROUND(((dp.price_usd - cp.price_usd) / NULLIF(cp.price_usd, 0)) * 100, 2) AS gap_pct,
@@ -74,8 +74,8 @@ export async function GET(request: NextRequest) {
         JOIN products d ON d.id = pm.daka_product_id
         JOIN products c ON c.id = pm.competitor_product_id
         JOIN sources cs ON cs.id = c.source_id AND cs.slug = ${source}
-        JOIN price_history dp ON dp.job_id = pj.daka_job_id AND dp.product_id = d.id
-        JOIN price_history cp ON cp.job_id = pj.competitor_job_id AND cp.product_id = c.id
+        JOIN display_price_history dp ON dp.job_id = pj.daka_job_id AND dp.product_id = d.id
+        JOIN display_price_history cp ON cp.job_id = pj.competitor_job_id AND cp.product_id = c.id
         WHERE dp.price_usd IS NOT NULL AND cp.price_usd IS NOT NULL
           AND (${search} = '' OR (d.name || ' ' || d.external_id || ' ' || c.name || ' ' || c.external_id) ILIKE ${searchLike})
           AND (${category} = '' OR d.category = ${category})
@@ -90,6 +90,7 @@ export async function GET(request: NextRequest) {
           MIN(daka_sap) AS daka_sap, MIN(daka_name) AS daka_name,
           MIN(category) AS category, MIN(daka_url) AS daka_url,
           MIN(competitor_product_id) AS competitor_product_id,
+          MAX(adjustment_percentage) AS adjustment_percentage,
           MIN(competitor_reference) AS competitor_reference,
           MIN(competitor_name) AS competitor_name, MIN(competitor_url) AS competitor_url,
           COUNT(*)::int AS capture_days,
@@ -182,7 +183,7 @@ export async function GET(request: NextRequest) {
     `;
     const first = rows[0];
     const items = rows.map((row) => ({
-      matchId: asNumber(row.match_id),
+      matchId: asNumber(row.match_id), adjustmentPercentage: asNumber(row.adjustment_percentage),
       daka: { id: asNumber(row.daka_product_id), externalId: row.daka_sap, name: row.daka_name, category: row.category, url: row.daka_url, price: asNumber(row.latest_daka_price), inStock: row.latest_daka_in_stock },
       competitor: { id: asNumber(row.competitor_product_id), externalId: row.competitor_reference, name: row.competitor_name, url: row.competitor_url, price: asNumber(row.latest_competitor_price), inStock: row.latest_competitor_in_stock },
       captureDays: asNumber(row.capture_days), dakaLowerDays: asNumber(row.daka_lower_days), competitorLowerDays: asNumber(row.competitor_lower_days), equalDays: asNumber(row.equal_days), leadershipChanges: asNumber(row.leadership_changes),

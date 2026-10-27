@@ -52,14 +52,14 @@ export async function GET(request: NextRequest) {
             AND j.id::text IN (${currentJob}, ${previousJob})
         ), current_prices AS (
           SELECT ph.product_id, ph.price_usd, ph.scraped_at
-          FROM price_history ph
+          FROM display_price_history ph
           JOIN products cp ON cp.id = ph.product_id
           WHERE ph.job_id::text = ${currentJob}
             AND cp.source_id = (SELECT id FROM selected_source)
             AND (SELECT current_count FROM valid_jobs) = 1
         ), previous_prices AS (
           SELECT ph.product_id, ph.price_usd
-          FROM price_history ph
+          FROM display_price_history ph
           JOIN products pp ON pp.id = ph.product_id
           WHERE ph.job_id::text = ${previousJob}
             AND pp.source_id = (SELECT id FROM selected_source)
@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
             PARTITION BY ph.product_id
             ORDER BY ph.scraped_at
           ) AS previous_price
-        FROM price_history ph
+        FROM display_price_history ph
         JOIN products ordered_product ON ordered_product.id = ph.product_id
         WHERE ordered_product.source_id = (SELECT id FROM selected_source)
       ), filtered_changes AS (
@@ -207,12 +207,12 @@ export async function GET(request: NextRequest) {
             ${status} = 'all'
             OR NOT EXISTS (SELECT 1 FROM latest_successful_job)
             OR (${status} = 'current' AND EXISTS (
-              SELECT 1 FROM price_history latest_ph
+              SELECT 1 FROM display_price_history latest_ph
               WHERE latest_ph.product_id = eligible_product.id
                 AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
             ))
             OR (${status} = 'missing' AND NOT EXISTS (
-              SELECT 1 FROM price_history latest_ph
+              SELECT 1 FROM display_price_history latest_ph
               WHERE latest_ph.product_id = eligible_product.id
                 AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
             ))
@@ -240,7 +240,7 @@ export async function GET(request: NextRequest) {
         (SELECT COUNT(*) FILTER (WHERE difference_usd < 0)::int FROM eligible_changes) AS drops,
         (SELECT COUNT(*) FILTER (WHERE difference_usd > 0)::int FROM eligible_changes) AS increases,
         EXISTS (
-          SELECT 1 FROM price_history latest_ph
+          SELECT 1 FROM display_price_history latest_ph
           WHERE latest_ph.product_id = p.id
             AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
         ) AS seen_in_latest

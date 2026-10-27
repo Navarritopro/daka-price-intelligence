@@ -82,6 +82,12 @@ function styleHeader(row: ExcelJS.Row) {
   row.height = 28;
 }
 
+function adjustmentLabel(page: OpportunityPage) {
+  return page.priceAdjustmentPercentage
+    ? `Venelectronics +${page.priceAdjustmentPercentage}% sobre precio web; historico guardado original.`
+    : "Venelectronics: precios web sin ajuste.";
+}
+
 export async function buildOpportunityExcel(page: OpportunityPage, query: OpportunityQuery) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "DAKA Price Intelligence";
@@ -101,6 +107,7 @@ export async function buildOpportunityExcel(page: OpportunityPage, query: Opport
     ["Riesgos de disponibilidad", page.stats.availabilityRisks],
     ["Ventajas de disponibilidad", page.stats.availabilityAdvantages],
     ["Datos por actualizar", page.stats.stale],
+    ["Ajuste de Venelectronics", adjustmentLabel(page)],
     ["Metodología", "Última ejecución exitosa de DAKA contra la última ejecución exitosa de cada competidor. La señal apoya la revisión comercial y no asume margen ni recomienda descuentos automáticamente."]
   ];
   summary.addRows(summaryRows);
@@ -238,6 +245,7 @@ export async function buildOpportunityPdf(page: OpportunityPage, query: Opportun
   drawPdfText(summaryPage, "Resumen ejecutivo", bold, { x: 34, y: height - 94, size: 18, color: pdfColor("003288") });
   drawPdfText(summaryPage, `Generado: ${formatDate(page.generatedAt)}`, regular, { x: 34, y: height - 113, size: 8, color: pdfColor("526780") });
   drawPdfText(summaryPage, truncate(describeOpportunityFilters(query), 170), regular, { x: 34, y: height - 127, size: 8, color: pdfColor("526780") });
+  drawPdfText(summaryPage, adjustmentLabel(page), regular, { x: 34, y: height - 140, size: 8, color: pdfColor("526780") });
   const metrics = [
     ["Oportunidades", page.stats.total], ["Críticas o altas", page.stats.prioritized],
     ["Riesgos de precio", page.stats.priceRisks], ["Ventajas de precio", page.stats.priceAdvantages],
@@ -337,6 +345,7 @@ export function buildOpportunityTelegramCaption(page: OpportunityPage, query: Op
     "Centro de oportunidades comerciales DAKA",
     `${page.stats.total} oportunidades · ${page.stats.prioritized} críticas/altas`,
     `Filtros: ${describeOpportunityFilters(query)}`,
+    adjustmentLabel(page),
     "",
     "Top 5 brechas:",
     ...topFive.map((item, index) => `${index + 1}. ${truncate(item.daka.name, 42)} · ${item.primary.sourceName} · ${item.primary.differencePct == null ? "—" : `${item.primary.differencePct.toFixed(1)}%`}`),
@@ -350,3 +359,4 @@ export function opportunityReportFilename(extension: "xlsx" | "pdf", date = new 
   const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Caracas", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
   return `oportunidades-daka-${stamp}.${extension}`;
 }
+

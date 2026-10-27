@@ -80,22 +80,23 @@ export async function GET(request: NextRequest) {
           current_ph.available_quantity AS current_quantity, current_ph.scraped_at AS current_scraped_at,
           last_seen.job_sequence AS last_seen_sequence, last_seen.job_date AS last_seen_date,
           last_seen.scraped_at AS last_seen_at, last_seen.price_usd AS last_price,
+          last_seen.captured_price_usd AS captured_last_price, last_seen.adjustment_percentage,
           last_seen.in_stock AS last_in_stock, last_seen.available_quantity AS last_quantity,
           first_seen.job_sequence AS first_seen_sequence, first_seen.scraped_at AS first_seen_at,
           missing_start.finished_at AS missing_since
         FROM pair_details pd
         JOIN products p ON p.source_id = pd.source_id
-        LEFT JOIN price_history previous_ph ON previous_ph.job_id = pd.previous_job_id AND previous_ph.product_id = p.id
-        LEFT JOIN price_history current_ph ON current_ph.job_id = pd.current_job_id AND current_ph.product_id = p.id
+        LEFT JOIN display_price_history previous_ph ON previous_ph.job_id = pd.previous_job_id AND previous_ph.product_id = p.id
+        LEFT JOIN display_price_history current_ph ON current_ph.job_id = pd.current_job_id AND current_ph.product_id = p.id
         LEFT JOIN LATERAL (
-          SELECT v.job_sequence, v.job_date, ph.scraped_at, ph.price_usd, ph.in_stock, ph.available_quantity
-          FROM valid_jobs v JOIN price_history ph ON ph.job_id = v.id AND ph.product_id = p.id
+          SELECT v.job_sequence, v.job_date, ph.scraped_at, ph.price_usd, ph.captured_price_usd, ph.adjustment_percentage, ph.in_stock, ph.available_quantity
+          FROM valid_jobs v JOIN display_price_history ph ON ph.job_id = v.id AND ph.product_id = p.id
           WHERE v.source_id = pd.source_id AND v.job_sequence <= pd.current_sequence
           ORDER BY v.job_sequence DESC LIMIT 1
         ) last_seen ON TRUE
         LEFT JOIN LATERAL (
           SELECT v.job_sequence, ph.scraped_at
-          FROM valid_jobs v JOIN price_history ph ON ph.job_id = v.id AND ph.product_id = p.id
+          FROM valid_jobs v JOIN display_price_history ph ON ph.job_id = v.id AND ph.product_id = p.id
           WHERE v.source_id = pd.source_id AND v.job_sequence <= pd.current_sequence
           ORDER BY v.job_sequence LIMIT 1
         ) first_seen ON TRUE
@@ -199,6 +200,8 @@ export async function GET(request: NextRequest) {
       consecutiveAbsences: asNumber(row.consecutive_absences), firstSeenAt: row.first_seen_at ?? null,
       lastSeenAt: row.last_seen_at ?? null, missingSince: row.missing_since ?? null,
       lastPrice: row.last_price == null ? null : asNumber(row.last_price),
+      capturedLastPrice: row.captured_last_price == null ? null : asNumber(row.captured_last_price),
+      adjustmentPercentage: asNumber(row.adjustment_percentage),
       currentPrice: row.current_price == null ? null : asNumber(row.current_price),
       lastInStock: row.last_in_stock, currentInStock: row.current_in_stock,
       lastQuantity: row.last_quantity == null ? null : asNumber(row.last_quantity),

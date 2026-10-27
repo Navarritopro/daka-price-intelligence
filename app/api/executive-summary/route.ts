@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
           FROM scraping_jobs j WHERE j.source_id = s.id AND j.status = 'success'
           ORDER BY j.started_at DESC LIMIT 1 OFFSET 1
         ) previous_job ON TRUE
-        LEFT JOIN price_history ph ON ph.job_id = current_job.id
-        LEFT JOIN price_history old ON old.job_id = previous_job.id AND old.product_id = ph.product_id
+        LEFT JOIN display_price_history ph ON ph.job_id = current_job.id
+        LEFT JOIN display_price_history old ON old.job_id = previous_job.id AND old.product_id = ph.product_id
         WHERE s.active = TRUE AND s.slug IN ('daka', 'damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
         GROUP BY s.slug, s.name, current_job.captured_at, previous_job.captured_at
         ORDER BY CASE s.slug
@@ -90,8 +90,8 @@ export async function GET(request: NextRequest) {
         JOIN sources cs ON cs.id = sm.competitor_source_id
         JOIN latest_jobs dj ON dj.source_id = ds.id
         JOIN latest_jobs cj ON cj.source_id = cs.id
-        JOIN price_history dp ON dp.product_id = d.id AND dp.job_id = dj.id
-        JOIN price_history cp ON cp.product_id = c.id AND cp.job_id = cj.id
+        JOIN display_price_history dp ON dp.product_id = d.id AND dp.job_id = dj.id
+        JOIN display_price_history cp ON cp.product_id = c.id AND cp.job_id = cj.id
         WHERE dp.price_usd > 0 AND cp.price_usd > 0
           AND dp.in_stock = TRUE AND cp.in_stock = TRUE
           AND dj.captured_at BETWEEN NOW() - INTERVAL '48 hours' AND NOW()

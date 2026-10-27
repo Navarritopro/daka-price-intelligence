@@ -18,7 +18,7 @@ export async function GET() {
         LIMIT 1
       ), latest_snapshot AS (
         SELECT ph.product_id, ph.price_usd, ph.scraped_at
-        FROM price_history ph
+        FROM display_price_history ph
         WHERE ph.job_id = (SELECT id FROM latest_successful_job)
       ), latest_job AS (
         SELECT status, started_at, finished_at
@@ -44,7 +44,7 @@ export async function GET() {
         MAX(ls.scraped_at) AS last_successful_scrape_at,
         (
           SELECT MAX(ph2.scraped_at)
-          FROM price_history ph2
+          FROM display_price_history ph2
           JOIN products p2 ON p2.id = ph2.product_id
           WHERE p2.source_id = (SELECT id FROM daka_source)
         ) AS last_recorded_price_at,

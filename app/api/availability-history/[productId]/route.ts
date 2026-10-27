@@ -38,7 +38,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pro
             ELSE NULL
           END AS is_available
         FROM daily_jobs dj CROSS JOIN product_source ps
-        LEFT JOIN price_history ph ON ph.job_id = dj.id AND ph.product_id = ps.id
+        LEFT JOIN display_price_history ph ON ph.job_id = dj.id AND ph.product_id = ps.id
       ), observed AS (
         SELECT *, LAG(available_quantity) OVER (ORDER BY capture_date) AS previous_quantity
         FROM captures WHERE available_quantity IS NOT NULL OR is_available IS NOT NULL

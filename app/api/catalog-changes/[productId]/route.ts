@@ -42,7 +42,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pro
         ph.id IS NOT NULL AS detected, ph.price_usd, ph.list_price_usd,
         ph.in_stock, ph.available_quantity, ph.scraped_at
       FROM daily_jobs dj
-      LEFT JOIN price_history ph ON ph.job_id = dj.id AND ph.product_id = ${productId}
+      LEFT JOIN display_price_history ph ON ph.job_id = dj.id AND ph.product_id = ${productId}
       ORDER BY dj.job_date
     `;
     let consecutiveAbsences = 0;

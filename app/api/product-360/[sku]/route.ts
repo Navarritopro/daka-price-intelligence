@@ -72,9 +72,9 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sk
         LEFT JOIN latest_inventory li ON TRUE
         LEFT JOIN latest_list list ON TRUE
         LEFT JOIN web_product wp ON TRUE
-        LEFT JOIN price_history current_price ON current_price.product_id = wp.id
+        LEFT JOIN display_price_history current_price ON current_price.product_id = wp.id
           AND current_price.job_id = (SELECT id FROM daka_jobs WHERE position = 1)
-        LEFT JOIN price_history previous_price ON previous_price.product_id = wp.id
+        LEFT JOIN display_price_history previous_price ON previous_price.product_id = wp.id
           AND previous_price.job_id = (SELECT id FROM daka_jobs WHERE position = 2)
         WHERE m.sku = ${sku}
         LIMIT 1
@@ -86,7 +86,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sk
         ), ordered AS (
           SELECT ph.price_usd, ph.in_stock, ph.available_quantity, ph.scraped_at,
             LAG(ph.price_usd) OVER (ORDER BY ph.scraped_at) AS previous_price
-          FROM price_history ph WHERE ph.product_id = (SELECT id FROM web_product)
+          FROM display_price_history ph WHERE ph.product_id = (SELECT id FROM web_product)
         )
         SELECT *, MIN(price_usd) OVER() AS min_price, MAX(price_usd) OVER() AS max_price,
           COUNT(*) OVER()::int AS capture_count,
@@ -129,8 +129,8 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ sk
         LEFT JOIN products cp ON cp.id = sm.competitor_product_id
         LEFT JOIN ranked_jobs latest_job ON latest_job.source_id = cs.id AND latest_job.position = 1
         LEFT JOIN ranked_jobs previous_job ON previous_job.source_id = cs.id AND previous_job.position = 2
-        LEFT JOIN price_history current_price ON current_price.product_id = cp.id AND current_price.job_id = latest_job.id
-        LEFT JOIN price_history previous_price ON previous_price.product_id = cp.id AND previous_price.job_id = previous_job.id
+        LEFT JOIN display_price_history current_price ON current_price.product_id = cp.id AND current_price.job_id = latest_job.id
+        LEFT JOIN display_price_history previous_price ON previous_price.product_id = cp.id AND previous_price.job_id = previous_job.id
         WHERE cs.active = TRUE AND cs.slug IN ('damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
       `
     ]);

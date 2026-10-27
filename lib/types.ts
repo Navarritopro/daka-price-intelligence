@@ -5,6 +5,8 @@ export type ProductSummary = {
   category: string | null;
   url: string;
   currentPrice: number | null;
+  capturedPrice?: number | null;
+  adjustmentPercentage?: number;
   previousPrice: number | null;
   changePct: number | null;
   scrapedAt: string | null;

@@ -63,6 +63,20 @@ class CompetitorPriceReportTests(unittest.TestCase):
         self.assertNotIn("P1 ·", message)
         self.assertIn("Top 5 mayores variaciones", message)
 
+    def test_venelectronics_report_identifies_current_adjustment(self):
+        timezone = ZoneInfo("America/Caracas")
+        current = {"captured_at": datetime(2026, 10, 27, 9, tzinfo=timezone)}
+        previous = {"captured_at": datetime(2026, 10, 26, 9, tzinfo=timezone)}
+        result = calculate_changes(
+            [{"product_id": 1, "external_id": "VE-1", "name": "Producto", "price_usd": Decimal("275")}],
+            [{"product_id": 1, "external_id": "VE-1", "name": "Producto", "price_usd": Decimal("264")}],
+        )
+        message = build_source_report("Venelectronics", current, previous, result, 10)
+        self.assertIn("+10%", message)
+        self.assertIn("$264.00 → $275.00", message)
+        self.assertIn("histórico guardado original", message)
+        self.assertNotIn("Precios ajustados", build_source_report("Venelectronics", current, previous, result, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

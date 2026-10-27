@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         LIMIT 1
       ), latest_snapshot AS (
         SELECT product_id, price_usd, in_stock
-        FROM price_history
+        FROM display_price_history
         WHERE job_id = (SELECT id FROM latest_successful_job)
       )
       SELECT

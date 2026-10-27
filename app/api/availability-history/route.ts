@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
           END AS is_available
         FROM daily_jobs dj
         JOIN selected_sources ss ON ss.id = dj.source_id
-        JOIN price_history ph ON ph.job_id = dj.id
+        JOIN display_price_history ph ON ph.job_id = dj.id
         JOIN products p ON p.id = ph.product_id
         WHERE (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
           OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
             ELSE NULL
           END AS is_available
         FROM daily_jobs dj
-        JOIN price_history ph ON ph.job_id = dj.id
+        JOIN display_price_history ph ON ph.job_id = dj.id
         JOIN products p ON p.id = ph.product_id
         WHERE (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
           OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
           END AS is_available
         FROM daily_jobs dj
         JOIN selected_sources ss ON ss.id = dj.source_id
-        JOIN price_history ph ON ph.job_id = dj.id
+        JOIN display_price_history ph ON ph.job_id = dj.id
         JOIN products p ON p.id = ph.product_id
         WHERE (${search} = '' OR p.name ILIKE ${searchLike} OR p.external_id ILIKE ${searchLike}
           OR COALESCE(p.brand, '') ILIKE ${searchLike} OR COALESCE(p.model, '') ILIKE ${searchLike})

@@ -88,9 +88,9 @@ export async function GET(request: NextRequest) {
       JOIN products d ON d.id = pm.daka_product_id
       JOIN products c ON c.id = pm.competitor_product_id
       JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
-      LEFT JOIN price_history dp ON dp.product_id = d.id
+      LEFT JOIN display_price_history dp ON dp.product_id = d.id
         AND dp.job_id = (SELECT id FROM latest_daka_job)
-      LEFT JOIN price_history cp ON cp.product_id = c.id
+      LEFT JOIN display_price_history cp ON cp.product_id = c.id
         AND cp.job_id = (SELECT id FROM latest_competitor_job)
       WHERE pm.status = 'review'
         AND (${search} = '' OR d.name ILIKE ${searchLike} OR d.external_id ILIKE ${searchLike}

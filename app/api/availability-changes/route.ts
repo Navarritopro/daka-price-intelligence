@@ -57,9 +57,9 @@ export async function GET(request: NextRequest) {
           previous_ph.scraped_at AS previous_scraped_at
         FROM job_pairs jp
         JOIN products p ON p.source_id = jp.source_id
-        LEFT JOIN price_history current_ph
+        LEFT JOIN display_price_history current_ph
           ON current_ph.product_id = p.id AND current_ph.job_id = jp.current_job_id
-        LEFT JOIN price_history previous_ph
+        LEFT JOIN display_price_history previous_ph
           ON previous_ph.product_id = p.id AND previous_ph.job_id = jp.previous_job_id
         WHERE current_ph.id IS NOT NULL OR previous_ph.id IS NOT NULL
       ), classified AS (

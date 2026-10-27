@@ -5,6 +5,7 @@ import type { DashboardData, JobsResponse, JobSummary, MonitoringSourceSummary, 
 import CompetitorComparison from "@/components/competitor-comparison";
 import CommercialOpportunities from "@/components/commercial-opportunities";
 import CatalogChanges from "@/components/catalog-changes";
+import VenelectronicsPriceAdjustment from "@/components/venelectronics-price-adjustment";
 import DamascoCatalog from "@/components/damasco-catalog";
 import TechnicalMonitoring from "@/components/technical-monitoring";
 import SessionControls from "@/components/session-controls";
@@ -797,6 +798,7 @@ export default function Dashboard() {
           <SessionControls onRole={setCurrentRole}/>
         </div>
       </header>
+      <VenelectronicsPriceAdjustment/>
 
       {error && <div className="error-banner"><strong>Conexión pendiente</strong><span>{error}</span><button onClick={() => void load()}>Reintentar</button></div>}
       {(view !== "prices" || priceTab !== "explore" || historyMode) && <div className="context-back-row"><button type="button" onClick={returnToPreviousView}>← Volver a la vista anterior</button></div>}
@@ -853,7 +855,7 @@ export default function Dashboard() {
               </article>
             </section>
           </> : priceTab === "damasco"
-            ? <DamascoCatalog reportComparison={reportComparison}/>
+            ? <DamascoCatalog canAdmin={currentRole === "admin"} reportComparison={reportComparison}/>
             : priceTab === "catalogChanges"
               ? <CatalogChanges/>
               : priceTab === "competitors"

@@ -11,6 +11,7 @@ type CatalogItem = {
   id: number; externalId: string; name: string; brand: string | null; category: string | null;
   url: string; imageUrl: string | null; source: Exclude<Source, "all">; sourceName: string;
   state: ChangeState; consecutiveAbsences: number; firstSeenAt: string | null; lastSeenAt: string | null;
+  capturedLastPrice?: number | null; adjustmentPercentage?: number;
   missingSince: string | null; lastPrice: number | null; currentPrice: number | null;
   lastInStock: boolean | null; currentInStock: boolean | null;
   lastQuantity: number | null; currentQuantity: number | null;
@@ -193,6 +194,8 @@ export default function CatalogChanges() {
         exported.push(...payload.items);
         if (!payload.hasMore) break;
       }
+      const adjustmentVersions = new Set(exported.filter(item => item.source === "venelectronics").map(item => item.adjustmentPercentage ?? 0));
+      if (adjustmentVersions.size > 1) throw new Error("El ajuste de Venelectronics cambió durante la exportación. Vuelve a descargar el archivo.");
       const ExcelJS = await import("exceljs");
       const workbook = new ExcelJS.Workbook();
       workbook.creator = "DAKA Price Lab";
@@ -203,18 +206,21 @@ export default function CatalogChanges() {
         { header: "Marca", key: "brand", width: 18 }, { header: "Categoría", key: "category", width: 24 },
         { header: "Última aparición", key: "lastSeenAt", width: 23 }, { header: "Ausente desde", key: "missingSince", width: 23 },
         { header: "Ausencias consecutivas", key: "absences", width: 22 }, { header: "Último precio USD", key: "price", width: 18 },
-        { header: "Última disponibilidad", key: "stock", width: 25 }, { header: "URL", key: "url", width: 60 }
+        { header: "Última disponibilidad", key: "stock", width: 25 }, { header: "URL", key: "url", width: 60 },
+        { header: "Precio web capturado USD", key: "capturedPrice", width: 24 }, { header: "Incremento aplicado %", key: "adjustment", width: 22 }
       ];
       for (const item of exported) sheet.addRow({
         source: item.sourceName, state: STATE_LABELS[item.state], name: item.name, externalId: item.externalId,
         brand: item.brand ?? "", category: item.category ?? "", lastSeenAt: formatDate(item.lastSeenAt),
         missingSince: item.missingSince ? formatDate(item.missingSince) : "", absences: item.consecutiveAbsences,
+        capturedPrice: item.capturedLastPrice, adjustment: item.adjustmentPercentage ?? 0,
         price: item.lastPrice, stock: stockLabel(item.lastQuantity, item.lastInStock), url: item.url
       });
       sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
       sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF003288" } };
-      sheet.autoFilter = { from: "A1", to: "L1" };
+      sheet.autoFilter = { from: "A1", to: "N1" };
       sheet.getColumn("price").numFmt = "$#,##0.00";
+      sheet.getColumn("capturedPrice").numFmt = "$#,##0.00";
       const buffer = await workbook.xlsx.writeBuffer();
       const bytes = new Uint8Array(buffer);
       const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });

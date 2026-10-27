@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ id
     const rows = await sql`
       SELECT price_usd, scraped_at,
         LAG(price_usd) OVER (ORDER BY scraped_at) AS previous_price
-      FROM price_history
+      FROM display_price_history
       WHERE product_id = ${productId}
       ORDER BY scraped_at DESC
       LIMIT 90

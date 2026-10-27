@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         FROM products c
         JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
         JOIN target ON target.source_id = c.source_id
-        LEFT JOIN price_history cp ON cp.product_id = c.id AND cp.job_id = (SELECT id FROM latest_job)
+        LEFT JOIN display_price_history cp ON cp.product_id = c.id AND cp.job_id = (SELECT id FROM latest_job)
         WHERE c.id <> target.competitor_product_id
           AND (${search} = '' OR c.name ILIKE ${searchLike} OR c.external_id ILIKE ${searchLike}
             OR COALESCE(c.brand, '') ILIKE ${searchLike} OR COALESCE(c.model, '') ILIKE ${searchLike})
@@ -113,8 +113,8 @@ export async function GET(request: NextRequest) {
       JOIN products d ON d.id = pm.daka_product_id
       JOIN products c ON c.id = pm.competitor_product_id
       JOIN sources s ON s.id = c.source_id AND s.slug = ${source}
-      LEFT JOIN price_history dp ON dp.product_id = d.id AND dp.job_id = (SELECT id FROM latest_daka_job)
-      LEFT JOIN price_history cp ON cp.product_id = c.id AND cp.job_id = (SELECT id FROM latest_competitor_job)
+      LEFT JOIN display_price_history dp ON dp.product_id = d.id AND dp.job_id = (SELECT id FROM latest_daka_job)
+      LEFT JOIN display_price_history cp ON cp.product_id = c.id AND cp.job_id = (SELECT id FROM latest_competitor_job)
       LEFT JOIN LATERAL (
         SELECT a.action, a.reason, a.notes, a.actor_email, a.created_at
         FROM product_match_audit a WHERE a.match_id = pm.id OR a.replacement_match_id = pm.id

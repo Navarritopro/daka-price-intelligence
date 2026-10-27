@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
           ph.price_usd,
           ph.scraped_at,
           LAG(ph.price_usd) OVER (ORDER BY ph.scraped_at) AS previous_price
-        FROM price_history ph
+        FROM display_price_history ph
         WHERE ph.product_id = ${productId}
       ), changes AS (
         SELECT

@@ -50,8 +50,8 @@ export async function GET(request: NextRequest, context: { params: Promise<{ mat
       JOIN products c ON c.id = pm.competitor_product_id
       JOIN sources cs ON cs.id = c.source_id AND cs.slug = ${source}
       JOIN paired_jobs pj ON TRUE
-      JOIN price_history dp ON dp.job_id = pj.daka_job_id AND dp.product_id = d.id
-      JOIN price_history cp ON cp.job_id = pj.competitor_job_id AND cp.product_id = c.id
+      JOIN display_price_history dp ON dp.job_id = pj.daka_job_id AND dp.product_id = d.id
+      JOIN display_price_history cp ON cp.job_id = pj.competitor_job_id AND cp.product_id = c.id
       WHERE pm.id = ${matchId} AND pm.status IN ('auto', 'confirmed')
         AND dp.price_usd IS NOT NULL AND cp.price_usd IS NOT NULL
       ORDER BY pj.capture_date ASC

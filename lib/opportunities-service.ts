@@ -37,6 +37,7 @@ export type OpportunityQuery = {
 };
 
 type PairRow = {
+  price_adjustment_percentage: unknown;
   match_id: unknown;
   confidence: unknown;
   daka_id: unknown;
@@ -133,6 +134,7 @@ export type OpportunityStats = {
 };
 
 export type OpportunityPage = {
+  priceAdjustmentPercentage?: number;
   items: Opportunity[];
   total: number;
   offset: number;
@@ -186,6 +188,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
         SELECT id FROM sources WHERE slug = 'daka'
       )
       SELECT
+        COALESCE((SELECT CASE WHEN enabled THEN percentage ELSE 0 END FROM price_display_adjustments WHERE source_slug = 'venelectronics'), 0) AS price_adjustment_percentage,
         pm.id AS match_id, pm.confidence,
         d.id AS daka_id, d.external_id AS daka_sap, d.name AS daka_name,
         d.brand AS daka_brand, d.category AS daka_category, d.url AS daka_url,
@@ -206,12 +209,12 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       JOIN sources cs ON cs.id = c.source_id AND cs.slug IN ('damasco', 'multimax', 'ivoo', 'venelectronics', 'soytechno')
       JOIN latest_jobs dlj ON dlj.source_id = (SELECT id FROM daka_source)
       JOIN latest_jobs clj ON clj.source_id = cs.id
-      JOIN price_history dp ON dp.product_id = d.id AND dp.job_id = dlj.id
-      JOIN price_history cp ON cp.product_id = c.id AND cp.job_id = clj.id
+      JOIN display_price_history dp ON dp.product_id = d.id AND dp.job_id = dlj.id
+      JOIN display_price_history cp ON cp.product_id = c.id AND cp.job_id = clj.id
       LEFT JOIN previous_jobs dpj ON dpj.source_id = (SELECT id FROM daka_source)
       LEFT JOIN previous_jobs cpj ON cpj.source_id = cs.id
-      LEFT JOIN price_history dpp ON dpp.product_id = d.id AND dpp.job_id = dpj.id
-      LEFT JOIN price_history cpp ON cpp.product_id = c.id AND cpp.job_id = cpj.id
+      LEFT JOIN display_price_history dpp ON dpp.product_id = d.id AND dpp.job_id = dpj.id
+      LEFT JOIN display_price_history cpp ON cpp.product_id = c.id AND cpp.job_id = cpj.id
       WHERE pm.status IN ('auto', 'confirmed')
       ORDER BY d.id, cs.slug, pm.confidence DESC
     `;
@@ -378,6 +381,7 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
     const items = includeAll ? opportunities : opportunities.slice(pageOffset, pageOffset + pageLimit);
 
     return {
+      priceAdjustmentPercentage: Number(rows[0]?.price_adjustment_percentage ?? 0),
       items, total: opportunities.length, offset: pageOffset, limit: pageLimit,
       hasMore: !includeAll && pageOffset + items.length < opportunities.length,
       minimumGap, stats, brands: availableBrands, categories: availableCategories,
@@ -385,3 +389,4 @@ export async function getOpportunityPage(query: OpportunityQuery, includeAll = f
       generatedAt: new Date().toISOString()
     };
 }
+

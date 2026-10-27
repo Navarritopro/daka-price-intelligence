@@ -55,9 +55,9 @@ export async function GET(request: NextRequest) {
         JOIN products d ON d.id = pm.daka_product_id
         JOIN products c ON c.id = pm.competitor_product_id
         JOIN sources cs ON cs.id = c.source_id AND cs.slug = ${source}
-        JOIN price_history dp
+        JOIN display_price_history dp
           ON dp.product_id = d.id AND dp.job_id = (SELECT id FROM latest_daka_job)
-        JOIN price_history cp
+        JOIN display_price_history cp
           ON cp.product_id = c.id AND cp.job_id = (SELECT id FROM latest_competitor_job)
         CROSS JOIN LATERAL (
           SELECT dp.price_usd - cp.price_usd AS price_gap
@@ -105,9 +105,9 @@ export async function GET(request: NextRequest) {
         SELECT dp.price_usd AS daka_price, cp.price_usd AS competitor_price
         FROM product_matches pm
         JOIN products c ON c.id = pm.competitor_product_id
-        JOIN price_history dp ON dp.product_id = pm.daka_product_id
+        JOIN display_price_history dp ON dp.product_id = pm.daka_product_id
           AND dp.job_id = (SELECT id FROM latest_daka_job)
-        JOIN price_history cp ON cp.product_id = pm.competitor_product_id
+        JOIN display_price_history cp ON cp.product_id = pm.competitor_product_id
           AND cp.job_id = (SELECT id FROM latest_competitor_job)
         WHERE c.source_id = (SELECT id FROM competitor_source)
           AND pm.status IN ('auto', 'confirmed')

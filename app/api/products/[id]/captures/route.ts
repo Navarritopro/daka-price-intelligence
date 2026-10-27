@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         SELECT ph.price_usd, ph.list_price_usd, ph.in_stock,
           ph.available_quantity, ph.scraped_at,
           LAG(ph.price_usd) OVER (ORDER BY ph.scraped_at) AS previous_price
-        FROM price_history ph
+        FROM display_price_history ph
         WHERE ph.product_id = ${productId}
       )
       SELECT *, COUNT(*) OVER()::int AS total_count,

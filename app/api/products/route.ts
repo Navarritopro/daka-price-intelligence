@@ -33,15 +33,15 @@ export async function GET(request: NextRequest) {
         LIMIT 1
       ), ranked AS (
         SELECT
-          ph.product_id, ph.price_usd, ph.list_price_usd, ph.in_stock,
+          ph.product_id, ph.price_usd, ph.list_price_usd, ph.captured_price_usd, ph.adjustment_percentage, ph.in_stock,
           ph.available_quantity, ph.scraped_at,
           LAG(ph.price_usd) OVER (PARTITION BY ph.product_id ORDER BY ph.scraped_at) AS previous_price,
           ROW_NUMBER() OVER (PARTITION BY ph.product_id ORDER BY ph.scraped_at DESC) AS rn
-        FROM price_history ph
+        FROM display_price_history ph
         JOIN products ranked_product ON ranked_product.id = ph.product_id
         WHERE ranked_product.source_id = (SELECT id FROM selected_source)
       ), current_prices AS (
-        SELECT product_id, price_usd, list_price_usd, in_stock,
+        SELECT product_id, price_usd, list_price_usd, captured_price_usd, adjustment_percentage, in_stock,
           available_quantity, previous_price, scraped_at,
           CASE WHEN previous_price IS NULL OR previous_price = 0 THEN NULL
           ELSE ROUND(((price_usd - previous_price) / previous_price) * 100, 2) END AS change_pct
@@ -50,11 +50,11 @@ export async function GET(request: NextRequest) {
       SELECT p.id, p.external_id, p.name, p.category, p.url, p.last_seen_at,
         p.brand, p.model,
         COUNT(*) OVER()::int AS total_count,
-        cp.price_usd, cp.list_price_usd, cp.in_stock, cp.available_quantity,
+        cp.price_usd, cp.list_price_usd, cp.captured_price_usd, cp.adjustment_percentage, cp.in_stock, cp.available_quantity,
         cp.previous_price, cp.change_pct, cp.scraped_at,
         EXISTS (
           SELECT 1
-          FROM price_history latest_ph
+          FROM display_price_history latest_ph
           WHERE latest_ph.product_id = p.id
             AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
         ) AS seen_in_latest
@@ -69,12 +69,12 @@ export async function GET(request: NextRequest) {
           ${status} = 'all'
           OR NOT EXISTS (SELECT 1 FROM latest_successful_job)
           OR (${status} = 'current' AND EXISTS (
-            SELECT 1 FROM price_history latest_ph
+            SELECT 1 FROM display_price_history latest_ph
             WHERE latest_ph.product_id = p.id
               AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
           ))
           OR (${status} = 'missing' AND NOT EXISTS (
-            SELECT 1 FROM price_history latest_ph
+            SELECT 1 FROM display_price_history latest_ph
             WHERE latest_ph.product_id = p.id
               AND latest_ph.job_id = (SELECT id FROM latest_successful_job)
           ))
@@ -110,6 +110,8 @@ export async function GET(request: NextRequest) {
       category: row.category,
       url: row.url,
       currentPrice: row.price_usd == null ? null : asNumber(row.price_usd),
+      capturedPrice: row.captured_price_usd == null ? null : asNumber(row.captured_price_usd),
+      adjustmentPercentage: asNumber(row.adjustment_percentage),
       previousPrice: row.previous_price == null ? null : asNumber(row.previous_price),
       changePct: row.change_pct == null ? null : asNumber(row.change_pct),
       scrapedAt: row.scraped_at ?? null,
