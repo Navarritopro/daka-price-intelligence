@@ -1,0 +1,29 @@
+name: Preparar descuento web DAKA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: setup-price-adjustment
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DATABASE_URL: ${{ secrets.TEMP_DATABASE_URL || secrets.DATABASE_URL }}
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+      - name: Preparar descuento sin cambiar precios ni configuración de Venelectronics
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${DATABASE_URL:-}" || { echo "Falta la conexión de PostgreSQL"; exit 1; }
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/price_display_adjustments.sql
+      - name: Verificar configuración vigente
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT source_slug, enabled, percentage FROM price_display_adjustments WHERE source_slug IN ('daka', 'venelectronics') ORDER BY source_slug;"
