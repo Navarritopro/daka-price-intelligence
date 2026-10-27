@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/auth";
 import { getSql } from "@/lib/db";
+import { MAX_UNIVERSE_FILE_BYTES, readBoundedBody, validateUniverseFileSize } from "@/lib/universe-upload-limits";
 import {
   DAKA_CARD_PERIOD,
   DAKA_INVENTORY_EFFECTIVE_DATE,
@@ -22,7 +23,7 @@ export const maxDuration = 300;
 const CHUNK_SIZE = 750;
 const chunks = <T,>(items: T[]) => Array.from({ length: Math.ceil(items.length / CHUNK_SIZE) }, (_, index) => items.slice(index * CHUNK_SIZE, (index + 1) * CHUNK_SIZE));
 
-async function readUpload(request: NextRequest) {
+async function readUpload(request: NextRequest, ownerId: string) {
   const kind = request.headers.get("x-import-kind") ?? "";
   const mode = request.headers.get("x-import-mode") ?? "preview";
   const encodedFilename = request.headers.get("x-file-name") ?? "";
@@ -31,8 +32,21 @@ async function readUpload(request: NextRequest) {
   if (!filename.toLowerCase().endsWith(".xlsx")) throw new Error("Selecciona un archivo Excel .xlsx");
   if (kind !== "master" && kind !== "inventory" && kind !== "price_list") throw new Error("Tipo de archivo no reconocido");
   if (mode !== "preview" && mode !== "publish") throw new Error("Modo de importación no reconocido");
-  const buffer = Buffer.from(await request.arrayBuffer());
-  if (!buffer.length || buffer.length > 4_000_000) throw new Error("El archivo debe pesar menos de 4 MB");
+  const uploadId = request.headers.get("x-upload-id");
+  let buffer: Buffer;
+  if (uploadId) {
+    if (!/^[0-9a-f-]{36}$/i.test(uploadId)) throw new Error("Identificador de carga inválido");
+    const sql = getSql();
+    const [stored] = await sql`DELETE FROM daka_universe_upload_staging
+      WHERE id = ${uploadId}::uuid AND owner_id = ${ownerId}::uuid
+        AND expires_at > NOW() AND octet_length(data) = total_bytes
+      RETURNING data`;
+    if (!stored) throw new Error("La carga está incompleta o vencida. Vuelve a validar el archivo.");
+    buffer = Buffer.from(stored.data);
+  } else {
+    buffer = Buffer.from(await readBoundedBody(request, MAX_UNIVERSE_FILE_BYTES));
+  }
+  validateUniverseFileSize(buffer.length);
   const effectiveDate = request.headers.get("x-effective-date")?.trim() ?? "";
   if (kind === "price_list" && !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
     throw new Error("Indica una fecha efectiva válida para la lista de precios");
@@ -215,7 +229,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getRequestUser(request);
     if (user?.role !== "admin") return NextResponse.json({ error: "Acceso administrativo requerido" }, { status: 403 });
-    const upload = await readUpload(request);
+    const upload = await readUpload(request, user.id);
     const rows = upload.kind === "master"
       ? await parseMasterWorkbook(upload.buffer)
       : upload.kind === "inventory"
@@ -246,3 +260,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: duplicate ? 409 : connectionFailure ? 503 : 400 });
   }
 }
+
